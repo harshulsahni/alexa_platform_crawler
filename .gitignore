@@ -1,0 +1,3 @@
+*.json
+.DS_STORE
+output/
