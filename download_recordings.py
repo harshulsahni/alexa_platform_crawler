@@ -15,7 +15,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.ui import WebDriverWait
-from xvfbwrapper import Xvfb
 
 import os
 import os.path as path
@@ -25,13 +24,10 @@ def setup(start_date, cookies_file, config_file, info_file):
     # firefox_options = webdriver.FirefoxOptions()
     chrome_options = webdriver.ChromeOptions()
 
-    display = Xvfb()
-    display.start()
-
     # firefox_options.headless = True
 
-    # chrome_options.add_experimental_option("detach", True)
-    chrome_options.add_argument("--headless")
+    chrome_options.add_experimental_option("detach", True)
+    # chrome_options.add_argument("--headless")
     # chrome_options.add_argument("--window-size=1920,1080")
     #  chrome_options.add_argument("--start-maximized")
     # chrome_options.add_argument("window-size=1200x600")
@@ -111,7 +107,6 @@ def setup(start_date, cookies_file, config_file, info_file):
             json.dump(recordings, f, indent=4)
     finally:
         driver.quit()
-        display.stop()
 
 
 def format_date(amazon_date):
