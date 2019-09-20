@@ -15,27 +15,53 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.ui import WebDriverWait
+from pyvirtualdisplay import Display
+
+from fake_useragent import UserAgent
 
 import os
 import os.path as path
 
 
+def two_step(driver):
+    try:
+
+        text_button = driver.find_element_by_xpath("//input[@type='radio' and @name='option' and @value='sms']")
+        text_button.click()
+
+        driver.find_element_by_id("continue").click()
+
+        verification = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//input[@type='text' and @name='code']")))
+        # need user input
+        code = input("Enter your 6 digit 2 Step Verification Code: ")
+
+        verification.send_keys(code)
+
+        submit = driver.find_element_by_xpath("//input[@type='submit']")
+        submit.click()
+
+    except NoSuchElementException:
+        print("No 2 Step Verification Required!")
+
+
 def setup(start_date, cookies_file, config_file, info_file):
     # firefox_options = webdriver.FirefoxOptions()
     chrome_options = webdriver.ChromeOptions()
+    display = Display(visible=False, size=(1200, 600)).start()
 
     # firefox_options.headless = True
-
+    ua = UserAgent()
+    userAgent = ua.random
+    print(userAgent)
     chrome_options.add_experimental_option("detach", True)
-    # chrome_options.add_argument("--headless")
-    # chrome_options.add_argument("--window-size=1920,1080")
     #  chrome_options.add_argument("--start-maximized")
     # chrome_options.add_argument("window-size=1200x600")
 
     # driver = webdriver.Firefox(options=firefox_options)
-    driver = webdriver.Chrome(options=chrome_options)
+    driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=chrome_options)
     try:
-        # driver.set_window_size(1680, 1050)
+
         driver.get("https://alexa.amazon.com")
 
         username = driver.find_element_by_id("ap_email")
@@ -49,14 +75,18 @@ def setup(start_date, cookies_file, config_file, info_file):
 
         driver.find_element_by_id("signInSubmit").click()
 
-        driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
+        two_step(driver)
 
         cookies = driver.get_cookies()
         with open(cookies_file, "w") as f:
             json.dump(cookies, f, indent=4)
 
-        time_picker = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "timePickerDesktop")))
+        with open("source.html", "w") as f:
+            f.write(driver.page_source)
+
+        driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
+
+        time_picker = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "timePickerDesktop")))
 
         select = Select(time_picker)
         select.select_by_value("custom")
@@ -106,7 +136,8 @@ def setup(start_date, cookies_file, config_file, info_file):
         with open(info_file, "w") as f:
             json.dump(recordings, f, indent=4)
     finally:
-        driver.quit()
+        driver.close()
+        display.stop()
 
 
 def format_date(amazon_date):
