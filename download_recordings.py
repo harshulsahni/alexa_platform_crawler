@@ -2,25 +2,23 @@
 
 import argparse
 import datetime
-
+import json
+import os
+import os.path as path
 import re
 import sys
-import json
+import time
 
 import pytz
 import requests
+from fake_useragent import UserAgent
+from pyvirtualdisplay import Display
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.ui import WebDriverWait
-from pyvirtualdisplay import Display
-
-from fake_useragent import UserAgent
-
-import os
-import os.path as path
 
 
 def two_step(driver):
@@ -45,21 +43,41 @@ def two_step(driver):
         print("No 2 Step Verification Required!")
 
 
-def setup(start_date, cookies_file, config_file, info_file):
+def captcha(driver, password):
+    try:
+        image = driver.find_element_by_id("auth-captcha-image")
+        src = image.get_attribute('src')
+
+        with open("captcha.jpg", "wb") as f:
+            f.write(requests.get(src).content)
+            f.close()
+
+        password_field = driver.find_element_by_id("ap_password")
+
+        for character in password:
+            password_field.send_keys(character)
+            time.sleep(0.3)
+
+        verification = driver.find_element_by_id("auth-captcha-guess")
+        user_guess = input("Enter your captcha guess: ")
+        verification.send_keys(user_guess)
+
+        submit = driver.find_element_by_id("signInSubmit")
+        submit.click()
+
+    except NoSuchElementException:
+        print("No Captcha!")
+
+
+def setup(start_date, cookies_file, config_file, info_file, user_agent):
     # firefox_options = webdriver.FirefoxOptions()
     chrome_options = webdriver.ChromeOptions()
     display = Display(visible=False, size=(1200, 600)).start()
 
-    # firefox_options.headless = True
-    ua = UserAgent()
-    userAgent = ua.random
-    print(userAgent)
     chrome_options.add_experimental_option("detach", True)
-    #  chrome_options.add_argument("--start-maximized")
-    # chrome_options.add_argument("window-size=1200x600")
+    chrome_options.add_argument("user-agent=" + str(user_agent))
 
-    # driver = webdriver.Firefox(options=firefox_options)
-    driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=chrome_options)
+    driver = webdriver.Chrome(executable_path="/usr/local/bin/chromedriver", options=chrome_options)
     try:
 
         driver.get("https://alexa.amazon.com")
@@ -77,12 +95,11 @@ def setup(start_date, cookies_file, config_file, info_file):
 
         two_step(driver)
 
+        captcha(driver, credentials["password"])
+
         cookies = driver.get_cookies()
         with open(cookies_file, "w") as f:
             json.dump(cookies, f, indent=4)
-
-        with open("source.html", "w") as f:
-            f.write(driver.page_source)
 
         driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
 
@@ -158,8 +175,11 @@ def format_arg_date(data):
 def get_recordings(config_file, info_file, cookies_file, output_dir, end_date):
     url = "https://www.amazon.com/hz/mycd/playOption?id="
 
+    ua = UserAgent()
+    user_agent = ua.random
+
     if not path.isfile(info_file):
-        setup(end_date, cookies_file, config_file, info_file)
+        setup(end_date, cookies_file, config_file, info_file, user_agent)
 
     if not path.exists(output_dir):
         os.mkdir(output_dir)
@@ -179,7 +199,7 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date):
 
         recording_date = recording["date"]
         headers = {
-            'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:10.0) Gecko/20100101 Firefox/10.0'
+            'User-Agent': user_agent
         }
 
         formatted_date = format_date(recording_date)
@@ -223,7 +243,7 @@ def handle_arguments():
                         default="cookies.json")
     parser.add_argument("-o", "--output", type=str, help="specify a directory to output files", required=False,
                         default="output")
-    parser.add_argument("-d", "--date", type=str, help="specify a date in the format 'YYYY:MM:DD HH:MM:SS'",
+    parser.add_argument("-d", "--date", type=str, help="specify a date in the format 'YYYY/MM/DD HH:MM:SS'",
                         required=True)
 
     args = parser.parse_args()
