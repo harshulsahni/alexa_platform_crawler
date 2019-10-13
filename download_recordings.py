@@ -7,6 +7,7 @@ import os
 import os.path as path
 import re
 import sys
+import random
 import time
 
 import pytz
@@ -19,6 +20,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver import ActionChains
 
 
 def two_step(driver):
@@ -63,7 +65,10 @@ def captcha(driver, password):
         verification.send_keys(user_guess)
 
         submit = driver.find_element_by_id("signInSubmit")
-        submit.click()
+        action = ActionChains(driver)
+        action.move_to_element_with_offset(submit, random.randint(5), random.randint(5))
+        action.click()
+        action.perform()
 
     except NoSuchElementException:
         print("No Captcha!")
