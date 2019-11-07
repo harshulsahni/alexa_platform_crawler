@@ -65,6 +65,10 @@ def captcha(driver, password):
         verification.send_keys(user_guess)
 
         submit = driver.find_element_by_id("signInSubmit")
+
+        with open("test.html", "w") as f:
+            f.write(driver.page_source)
+        
         submit.click()
 
     except NoSuchElementException:
