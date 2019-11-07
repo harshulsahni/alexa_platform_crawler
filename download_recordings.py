@@ -82,7 +82,7 @@ def setup(start_date, cookies_file, config_file, info_file, user_agent):
     chrome_options.add_experimental_option("detach", True)
     chrome_options.add_argument("user-agent=" + str(user_agent))
 
-    driver = webdriver.Chrome(executable_path="/usr/local/bin/chromedriver", options=chrome_options)
+    driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=chrome_options)
     try:
 
         driver.get("https://alexa.amazon.com")
