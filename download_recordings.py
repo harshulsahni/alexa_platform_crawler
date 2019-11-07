@@ -65,10 +65,7 @@ def captcha(driver, password):
         verification.send_keys(user_guess)
 
         submit = driver.find_element_by_id("signInSubmit")
-        action = ActionChains(driver)
-        action.move_to_element_with_offset(submit, random.randint(5), random.randint(5))
-        action.click()
-        action.perform()
+        submit.click()
 
     except NoSuchElementException:
         print("No Captcha!")
