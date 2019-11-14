@@ -12,6 +12,7 @@ pip3 install virtualenv
 sudo apt install virtualenv
 # Ensure version is up to date for virtualenv
 pip3 install --upgrade virtualenv
+pip3 install pytz
 # Enter virtual env
 source venv/bin/activate
 # Install dependencies 
