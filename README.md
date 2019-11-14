@@ -16,5 +16,5 @@ credentials.json is the file that actually gets read to input as the credentials
 setup.sh is the setup script that will set up the whole project.
 install-chrome.sh installs a chrome browser
 requirements.txt is a list of all of the dependencies needed to run ./download_recordings.py and can be used to quickly install all of them using pip3 freeze -r requirements.txt.
-
-
+recordinginfo.json is a file that describes all of the recordings found. Delete this file when we want to forget about all of the recordings we've seen.
+cookies.json stores the cookies from login.
