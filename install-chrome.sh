@@ -9,3 +9,7 @@ unzip chromedriver_linux64.zip
 sudo cp chromedriver /usr/bin/chromedriver
 sudo chown root /usr/bin/chromedriver
 sudo chmod 755 /usr/bin/chromedriver
+
+rm chromedriver_linux64.zip 
+rm google-chrome-stable_current_amd64.deb
+rm chromedriver
