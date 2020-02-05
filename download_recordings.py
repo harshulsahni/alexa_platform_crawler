@@ -75,8 +75,10 @@ def captcha(driver, password):
         print("No Captcha!")
 
 
+
 def setup(start_date, cookies_file, config_file, info_file, user_agent):
     # firefox_options = webdriver.FirefoxOptions()
+    print('running setup')
     chrome_options = webdriver.ChromeOptions()
     display = Display(visible=False, size=(1200, 600)).start()
 
@@ -164,11 +166,19 @@ def setup(start_date, cookies_file, config_file, info_file, user_agent):
 
 
 def format_date(amazon_date):
-    match = re.search(
-        r'(Jan(uary)?|Feb(ruary)?|Mar(ch)?|Apr(il)?|May|Jun(e)?|Jul(y)?|Aug(ust)?|Sep(tember)?|Oct(ober)?|'
-        r'Nov(ember)?|Dec(ember)?)\s+\d{1,2},\s+\d{4}\s+at\s+\d{2}:\d{2}\s+[PA]M',
-        amazon_date)
-    date = datetime.datetime.strptime(match.group(), "%B %d, %Y at %I:%M %p")
+    if "Yesterday" not in amazon_date:
+        match = re.search(
+            r'(Jan(uary)?|Feb(ruary)?|Mar(ch)?|Apr(il)?|May|Jun(e)?|Jul(y)?|Aug(ust)?|Sep(tember)?|Oct(ober)?|'
+            r'Nov(ember)?|Dec(ember)?)\s+\d{1,2},\s+\d{4}\s+at\s+\d{2}:\d{2}\s+[PA]M',
+            amazon_date)
+        date = datetime.datetime.strptime(match.group(), "%B %d, %Y at %I:%M %p")
+    else:
+        match = re.search(r'(Yesterday?)\s+at\s+\d{2}:\d{2}\s+[PA]M', amazon_date)
+        yester_date = datetime.datetime.strftime(datetime.datetime.now() - datetime.timedelta(1),\
+                                                '%Y-%m-%d')
+        replaced = match.group().replace("Yesterday", yester_date)
+        date = datetime.datetime.strptime(replaced, "%Y-%m-%d at %I:%M %p")
+        date.strftime("%Y:%m:%d_%H:%M:%S")
     return date.strftime("%Y:%m:%d_%H:%M:%S")
 
 
@@ -183,6 +193,24 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date):
 
     ua = UserAgent()
     user_agent = ua.random
+    
+    last_credential_path = "./last_credentials.json"
+    #raise err if someone change use new account
+    if path.isfile(last_credential_path):
+        with open(last_credential_path, "r") as old_c:
+            old_credential = json.load(old_c)
+        with open(config_file, "r") as new_c:
+            new_credential = json.load(new_c)
+
+        if old_credential != new_credential:
+            os.remove(last_credential_path)
+            raise ValueError("You have changed credential settings, please save and delete the recordinginfo.json file.")
+    else:
+        #need to make a last_credential file if there is no such a file
+        with open(last_credential_path, "w") as old_c:
+            with open(config_file, "r") as new_c:
+                new_cred = json.load(new_c)
+                json.dump(new_cred, old_c)
 
     if not path.isfile(info_file):
         setup(end_date, cookies_file, config_file, info_file, user_agent)
@@ -209,7 +237,7 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date):
         }
 
         formatted_date = format_date(recording_date)
-
+        print('downloading')
         audio_file = get_file_path(formatted_date, output_dir, "wav")
         text_file = get_file_path(formatted_date, output_dir, "txt")
 
