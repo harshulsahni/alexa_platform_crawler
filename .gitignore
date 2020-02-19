@@ -108,3 +108,5 @@ venv.bak/
 /*.json
 .DS_STORE
 output/
+output.old/
+*.old
