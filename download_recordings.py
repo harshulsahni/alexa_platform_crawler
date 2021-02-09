@@ -6,8 +6,6 @@ import json
 import os
 import os.path as path
 import re
-import sys
-import random
 import time
 
 import pytz
@@ -18,9 +16,19 @@ from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException, TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import Select
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver import ActionChains
+from selenium.webdriver.support.ui import Select, WebDriverWait
+
+
+def create_driver(user_agent, show=False):
+    chrome_options = webdriver.ChromeOptions()
+    if not show:
+        Display(visible=False, size=(1200, 600)).start()
+
+    chrome_options.add_experimental_option("detach", True)
+    chrome_options.add_argument("user-agent=" + str(user_agent))
+
+    driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=chrome_options)
+    return driver
 
 
 def two_step(driver):
@@ -45,124 +53,157 @@ def two_step(driver):
         print("No 2 Step Verification Required!")
 
 
-def captcha(driver, password):
+def captcha(driver, username, password):
     try:
         image = driver.find_element_by_id("auth-captcha-image")
-        src = image.get_attribute('src')
-
-        with open("captcha.jpg", "wb") as f:
-            f.write(requests.get(src).content)
-            f.close()
-
-        password_field = driver.find_element_by_id("ap_password")
-
-        for character in password:
-            password_field.send_keys(character)
-            time.sleep(0.3)
-
-        verification = driver.find_element_by_id("auth-captcha-guess")
-        user_guess = input("Enter your captcha guess: ")
-        verification.send_keys(user_guess)
-
-        submit = driver.find_element_by_id("signInSubmit")
-
-        with open("test.html", "w") as f:
-            f.write(driver.page_source)
-        
-        submit.click()
-
     except NoSuchElementException:
         print("No Captcha!")
+        return
+
+    src = image.get_attribute('src')
+
+    with open("captcha.jpg", "wb") as f:
+        f.write(requests.get(src).content)
+        f.close()
+
+    enter_username_and_password(driver, username, password, slow=True, submit=False)
+
+    verification = driver.find_element_by_id("auth-captcha-guess")
+    user_guess = input("Enter your captcha guess: ")
+    verification.send_keys(user_guess)
+
+    submit = driver.find_element_by_id("signInSubmit")
+
+    with open("test.html", "w") as f:
+        f.write(driver.page_source)
+
+    submit.click()
+    driver.implicitly_wait(5)
 
 
-
-def setup(start_date, cookies_file, config_file, info_file, user_agent):
-    # firefox_options = webdriver.FirefoxOptions()
-    print('running setup')
-    chrome_options = webdriver.ChromeOptions()
-    display = Display(visible=False, size=(1200, 600)).start()
-
-    chrome_options.add_experimental_option("detach", True)
-    chrome_options.add_argument("user-agent=" + str(user_agent))
-
-    driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=chrome_options)
+def email_verification(driver):
+    url = driver.current_url
     try:
+        driver.find_element_by_id('resend-transaction-approval')
+    except NoSuchElementException:
+        print('No email verification!')
+        return
 
-        driver.get("https://alexa.amazon.com")
+    while driver.current_url == url:
+        print('Waiting for email verification. Please check your email.')
+        time.sleep(5)
+    return
 
-        username = driver.find_element_by_id("ap_email")
-        password = driver.find_element_by_id("ap_password")
 
-        with open(config_file, "r") as f:
-            credentials = json.load(f)
+def enter_username_and_password(driver, username, password, slow=False, submit=True):
+    username_box = driver.find_element_by_id("ap_email")
+    password_box = driver.find_element_by_id("ap_password")
+    username_box.clear()
+    password_box.clear()
 
-        username.send_keys(credentials["username"])
-        password.send_keys(credentials["password"])
+    if not slow:
+        username_box.send_keys(username)
+        password_box.send_keys(password)
+    else:
+        for key in username:
+            username_box.send_keys(key)
+            time.sleep(0.1)
+        for key in password:
+            password_box.send_keys(key)
+            time.sleep(0.2)
 
+    if submit:
         driver.find_element_by_id("signInSubmit").click()
+    driver.implicitly_wait(5)
 
-        two_step(driver)
 
-        captcha(driver, credentials["password"])
+def search_for_recordings(driver, start_date, end_date):
+    driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
+    driver.implicitly_wait(5)
+    display_button = driver.find_element_by_id('filters-selected-bar')
+    display_button.click()
+    filter_date_button = driver.find_element_by_class_name('filter-by-date-menu')
+    filter_date_button.click()
+    custom_button = driver.find_element_by_id('custom-date-range-filter')
+    custom_button.click()
 
-        cookies = driver.get_cookies()
-        with open(cookies_file, "w") as f:
-            json.dump(cookies, f, indent=4)
+    starting_date = driver.find_element_by_id('date-start')
+    starting_date.clear()
+    starting_date.send_keys(start_date)
 
-        driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
+    ending_date = driver.find_element_by_id('date-end')
+    ending_date.clear()
+    ending_date.send_keys()
 
-        time_picker = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "timePickerDesktop")))
+    ending_date.send_keys(end_date)
 
-        select = Select(time_picker)
-        select.select_by_value("custom")
-        calendar = driver.find_element_by_id("calendarsForCustom")
-        calendar.find_element_by_xpath("//input[@id='endDateId']").send_keys(
-            datetime.datetime.now(tz=pytz.timezone("America/Los_Angeles")).strftime("%m/%d/%Y"))
 
-        calendar.find_element_by_xpath("//input[@id='startDateId']").send_keys(start_date)
-        driver.find_element_by_id("submit").click()
+def setup(driver, start_date, cookies_file, config_file, info_file):
+    driver.get("https://alexa.amazon.com")
+    with open(config_file, "r") as f:
+        credentials = json.load(f)
+    username = credentials['username']
+    password = credentials['password']
 
-        # mainBox is the div for the commands
-        recordings = []
-        navigation_available = True
+    enter_username_and_password(driver, username, password, slow=True)
+    captcha(driver, username, password)
+    email_verification(driver)
 
-        while navigation_available:
-            try:
+    cookies = driver.get_cookies()
+    with open(cookies_file, "w") as f:
+        json.dump(cookies, f, indent=4)
 
-                elem = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, "mainBox")))
+    end_date = datetime.datetime.now(tz=pytz.timezone("America/Los_Angeles")).strftime("%m/%d/%Y")
+    search_for_recordings(driver, start_date, end_date)
+    print('done searching now tryna take recordings')
+    import ipdb; ipdb.set_trace()
+    try:
+        print('starting elem search')
+        elem = driver.find_elements_by_class_name('apd-content-box')
+        print(elem)
+        for e in elem:
+            print(e)
+    except NoSuchElementException as e:
+        print(e)
+        time.sleep(100)
 
-                for e in elem:
-                    text_info = e.find_element_by_class_name("textInfo")
-                    audio_id = text_info.find_element_by_class_name("playButton").get_attribute("attr")
-                    try:
-                        text_elem = text_info.find_element_by_class_name("summaryCss")
-                    except NoSuchElementException:
-                        text_elem = text_info.find_element_by_class_name("summaryNotAvailableCss")
+    # mainBox is the div for the commands
+    recordings = []
+    navigation_available = True
 
-                    text = text_elem.text
-                    date_elem = text_info.find_element_by_class_name("subInfo")
-                    date = date_elem.text
-                    recording_info = {
-                        "audio-id": audio_id,
-                        "text": text,
-                        "date": date
-                    }
-                    recordings.append(recording_info)
+    while navigation_available:
+        try:
+            elem = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located((By.CLASS_NAME, "apd-content-box")))
 
-                next_elem = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.CLASS_NAME, "paginationControls"))).find_element_by_id("nextButton")
+            for e in elem:
+                text_info = e.find_element_by_class_name("textInfo")
+                audio_id = text_info.find_element_by_class_name("playButton").get_attribute("attr")
+                try:
+                    text_elem = text_info.find_element_by_class_name("summaryCss")
+                except NoSuchElementException:
+                    text_elem = text_info.find_element_by_class_name("summaryNotAvailableCss")
 
-                navigation_available = "navigationAvailable" in next_elem.get_attribute("class")
-                if navigation_available:
-                    next_elem.click()
-            except TimeoutException:
-                break
+                text = text_elem.text
+                date_elem = text_info.find_element_by_class_name("subInfo")
+                date = date_elem.text
+                recording_info = {
+                    "audio-id": audio_id,
+                    "text": text,
+                    "date": date
+                }
+                recordings.append(recording_info)
 
-        with open(info_file, "w") as f:
-            json.dump(recordings, f, indent=4)
-    finally:
-        driver.close()
-        display.stop()
+            next_elem = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CLASS_NAME, "paginationControls"))).find_element_by_id("nextButton")
+
+            navigation_available = "navigationAvailable" in next_elem.get_attribute("class")
+            if navigation_available:
+                next_elem.click()
+        except TimeoutException as e:
+            print(e)
+
+    with open(info_file, "w") as f:
+        json.dump(recordings, f, indent=4)
 
 
 def format_date(amazon_date):
@@ -174,8 +215,7 @@ def format_date(amazon_date):
         date = datetime.datetime.strptime(match.group(), "%B %d, %Y at %I:%M %p")
     else:
         match = re.search(r'(Yesterday?)\s+at\s+\d{2}:\d{2}\s+[PA]M', amazon_date)
-        yester_date = datetime.datetime.strftime(datetime.datetime.now() - datetime.timedelta(1),\
-                                                '%Y-%m-%d')
+        yester_date = datetime.datetime.strftime(datetime.datetime.now() - datetime.timedelta(1), '%Y-%m-%d')
         replaced = match.group().replace("Yesterday", yester_date)
         date = datetime.datetime.strptime(replaced, "%Y-%m-%d at %I:%M %p")
         date.strftime("%Y:%m:%d_%H:%M:%S")
@@ -213,7 +253,13 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date):
                 json.dump(new_cred, old_c)
 
     if not path.isfile(info_file):
-        setup(end_date, cookies_file, config_file, info_file, user_agent)
+        driver = create_driver(user_agent, show=True)
+        try:
+            setup(driver, end_date, cookies_file, config_file, info_file)
+        except Exception as e:
+            print('ERROR DURING SETUP:')
+            print(e)
+            driver.quit()
 
     if not path.exists(output_dir):
         os.mkdir(output_dir)
@@ -263,11 +309,10 @@ def get_file_path(name, directory, extension):
 
 def ensure_file_existence(file_path):
     if not os.path.isfile(file_path):
-        print('Error: the file {} does not exist. Please check the path'.format(file_path))
-        sys.exit(-1)
+        raise OSError('Error: the file {} does not exist. Please check the path'.format(file_path))
 
 
-def handle_arguments():
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--config", type=str, help="specify a file for credential information", required=False,
                         default="credentials.json")
@@ -281,11 +326,9 @@ def handle_arguments():
                         required=True)
 
     args = parser.parse_args()
-
     ensure_file_existence(args.config)
-    return args.config, args.info, args.cookies, args.output, format_arg_date(args.date)
+    get_recordings(args.config, args.info, args.cookies, args.output, format_arg_date(args.date))
 
 
-config, info, cookies, output, date = handle_arguments()
-
-get_recordings(config, info, cookies, output, date)
+if __name__ == "__main__":
+    main()
