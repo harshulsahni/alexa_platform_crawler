@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 
 import argparse
-import datetime
 import json
 import os
 import time
 import urllib.request
 
-import ipdb
-import pytz
 import requests
 from fake_useragent import UserAgent
 from pyvirtualdisplay import Display
@@ -19,10 +16,10 @@ from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from utils import print_log, raise_exception, ensure_file_existence, format_arg_date, format_date, get_file_path
+from utils import print_log, raise_exception, ensure_file_existence, format_arg_date
 
 
-def create_driver(user_agent, show=False):
+def create_driver(user_agent, show=False, system='linux'):
     print_log("Setting up the driver.")
     chrome_options = webdriver.ChromeOptions()
     if not show:
@@ -30,11 +27,12 @@ def create_driver(user_agent, show=False):
     chrome_options.add_experimental_option("detach", True)
     chrome_options.add_argument("user-agent=" + str(user_agent))
 
-    # driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", options=chrome_options)
-
     caps = DesiredCapabilities.CHROME
     caps['goog:loggingPrefs'] = {'performance': 'ALL'}
-    driver = webdriver.Chrome('/usr/local/bin/chromedriver', desired_capabilities=caps, options=chrome_options)
+    if system == 'mac':
+        driver = webdriver.Chrome('/usr/local/bin/chromedriver', desired_capabilities=caps, options=chrome_options)
+    else:
+        driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", desired_capabilities=caps, options=chrome_options)
     print_log("Finished setting up the driver.")
     return driver
 
@@ -126,7 +124,7 @@ def enter_username_and_password(driver, username, password, slow=False, submit=T
     driver.implicitly_wait(2)
 
 
-def search_for_recordings(driver, start_date, end_date):
+def search_for_recordings(driver, start_date):
     print_log('Searching for recordings.')
     driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
     driver.implicitly_wait(5)
@@ -140,12 +138,6 @@ def search_for_recordings(driver, start_date, end_date):
     starting_date = driver.find_element_by_id('date-start')
     starting_date.clear()
     starting_date.send_keys(start_date)
-
-    ending_date = driver.find_element_by_id('date-end')
-    ending_date.clear()
-    ending_date.send_keys()
-
-    ending_date.send_keys(end_date)
 
 
 def check_for_uid(d):
@@ -243,9 +235,7 @@ def setup(driver, start_date, cookies_file, config_file, info_file):
     with open(cookies_file, "w") as f:
         json.dump(cookies, f, indent=4)
 
-    end_date = datetime.datetime.now(tz=pytz.timezone("America/Los_Angeles")).strftime("%m/%d/%Y")
-    search_for_recordings(driver, start_date, end_date)
-    ipdb.set_trace()
+    search_for_recordings(driver, start_date)
     open_all_recordings(driver)
     recording_boxes = driver.find_elements_by_class_name('apd-content-box')
     recording_metadata = extract_recording_metadata(recording_boxes, driver)
@@ -301,7 +291,7 @@ def setup(driver, start_date, cookies_file, config_file, info_file):
     driver.quit()
 
 
-def get_recordings(config_file, info_file, cookies_file, output_dir, end_date):
+def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, show):
     url = "https://www.amazon.com/hz/mycd/playOption?id="
 
     ua = UserAgent()
@@ -329,10 +319,8 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date):
     with open(cookies_file, "r") as f:
         cookies = json.load(f)
 
-    if not False:  # os.path.isfile(info_file):
-
-        driver = create_driver(user_agent, show=True)
-        setup(driver, end_date, cookies_file, config_file, info_file)
+    driver = create_driver(user_agent, show=show)
+    setup(driver, end_date, cookies_file, config_file, info_file)
 
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
@@ -379,10 +367,12 @@ def main():
                         default="output")
     parser.add_argument("-d", "--date", type=str, help="specify a date in the format 'YYYY/MM/DD HH:MM:SS'",
                         required=True)
+    parser.add_argument("-s", "--show", type=bool, help="show the chrome window as it searches for recordings. ",
+                        default=False, required=False)
 
     args = parser.parse_args()
     ensure_file_existence(args.config)
-    get_recordings(args.config, args.info, args.cookies, args.output, format_arg_date(args.date))
+    get_recordings(args.config, args.info, args.cookies, args.output, format_arg_date(args.date), args.show)
 
 
 if __name__ == "__main__":
