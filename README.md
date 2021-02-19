@@ -2,6 +2,7 @@
 - Clone this repository
 - Enter this repo's root directory
 - Run `chmod +x ./setup.sh` and `./setup.sh`
+- Run `source venv/bin/activate` to use the python virtual environment. 
 
 
 
