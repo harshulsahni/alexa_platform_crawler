@@ -16,7 +16,7 @@ pip3 install pytz
 # Enter virtual env
 source venv/bin/activate
 # Install dependencies 
-pip3 install -r requirements.txt
+pip install -r requirements.txt
 # Exit virtual env
 deactivate
 # Install unzip program to extract from zip files.
@@ -27,5 +27,3 @@ chmod +x install-chrome.sh
 ./install-chrome.sh
 # Create a credentials.json with the format of credentials.example but make sure to input your own username and password.
 cp credentials.example credentials.json
-
-

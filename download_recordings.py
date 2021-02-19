@@ -316,21 +316,21 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, s
                 new_cred = json.load(new_c)
                 json.dump(new_cred, old_c)
 
-    with open(cookies_file, "r") as f:
-        cookies = json.load(f)
+    # with open(cookies_file, "r") as f:
+    #     cookies = json.load(f)
 
     driver = create_driver(user_agent, show=show)
     setup(driver, end_date, cookies_file, config_file, info_file)
 
-    if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
+    # if not os.path.exists(output_dir):
+    #     os.mkdir(output_dir)
 
     # with open(info_file, "r") as f:
     #     recordings = json.load(f)
-
-    formatted_cookies = {}
-    for cookie in cookies:
-        formatted_cookies.update({cookie["name"]: cookie["value"]})
+    #
+    # formatted_cookies = {}
+    # for cookie in cookies:
+    #     formatted_cookies.update({cookie["name"]: cookie["value"]})
 
     # for recording in recordings:
     #     audio_id = recording["audio-id"]
