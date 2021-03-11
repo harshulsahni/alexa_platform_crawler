@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-import argparse
 import json
 import os
 import time
+import urllib.parse
 import urllib.request
 
+import click
 import requests
 from fake_useragent import UserAgent
 from pyvirtualdisplay import Display
@@ -16,15 +17,13 @@ from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
-from utils import print_log, raise_exception, ensure_file_existence, format_arg_date
+from utils import print_log, raise_exception, ensure_file_existence, format_arg_date, dump_cookies, \
+    get_uid_from_event, get_old_metadata, get_audio_ids, format_cookies_for_request
 
 
 def create_driver(user_agent, show=False, system='linux'):
     print_log("Setting up the driver.")
     chrome_options = webdriver.ChromeOptions()
-    if not show:
-        Display(visible=False, size=(1200, 600)).start()
-    chrome_options.add_experimental_option("detach", True)
     chrome_options.add_argument("user-agent=" + str(user_agent))
 
     caps = DesiredCapabilities.CHROME
@@ -32,7 +31,10 @@ def create_driver(user_agent, show=False, system='linux'):
     if system == 'mac':
         driver = webdriver.Chrome('/usr/local/bin/chromedriver', desired_capabilities=caps, options=chrome_options)
     else:
-        driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", desired_capabilities=caps, options=chrome_options)
+        Display(visible=show, size=(1200, 600)).start()
+        chrome_options.add_experimental_option("detach", True)
+        driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", desired_capabilities=caps,
+                                  options=chrome_options)
     print_log("Finished setting up the driver.")
     return driver
 
@@ -101,8 +103,9 @@ def email_verification(driver):
     return
 
 
-def enter_username_and_password(driver, username, password, slow=False, submit=True):
+def enter_username_and_password(driver, username, password, slow=False, submit=True, remember_me=False):
     print_log('Entering username and password.')
+    driver.get("https://alexa.amazon.com")
     username_box = driver.find_element_by_id("ap_email")
     password_box = driver.find_element_by_id("ap_password")
     username_box.clear()
@@ -119,6 +122,8 @@ def enter_username_and_password(driver, username, password, slow=False, submit=T
             password_box.send_keys(key)
             time.sleep(0.2)
 
+    if remember_me:
+        driver.find_element_by_xpath("//div[@data-a-input-name='rememberMe']/label/i").click()
     if submit:
         driver.find_element_by_id("signInSubmit").click()
     driver.implicitly_wait(2)
@@ -130,10 +135,13 @@ def search_for_recordings(driver, start_date):
     driver.implicitly_wait(5)
     display_button = driver.find_element_by_id('filters-selected-bar')
     display_button.click()
+    driver.implicitly_wait(1)
     filter_date_button = driver.find_element_by_class_name('filter-by-date-menu')
     filter_date_button.click()
+    driver.implicitly_wait(1)
     custom_button = driver.find_element_by_id('custom-date-range-filter')
     custom_button.click()
+    driver.implicitly_wait(1)
 
     starting_date = driver.find_element_by_id('date-start')
     starting_date.clear()
@@ -148,7 +156,7 @@ def check_for_uid(d):
            and ('uidArray[]=' in d.get('params').get('response').get('url'))
 
 
-def get_audio_data_from_event(e, username, password):
+def get_audio_data_from_event_old(e, username, password):
     url = e.get('params').get('response').get('url')
     request = urllib.request.Request(url)
     base64string = bytes('%s:%s' % (username, password), 'ascii')
@@ -157,7 +165,7 @@ def get_audio_data_from_event(e, username, password):
     return result.read()
 
 
-def open_all_recordings(driver):
+def reveal_all_recordings(driver):
     hidden_recordings = True
     while hidden_recordings:
         hidden_recordings = False
@@ -169,12 +177,33 @@ def open_all_recordings(driver):
                 button.click()
 
 
-def extract_recording_metadata(recording_boxes, driver):
+def find_div_id_in_metadata(id_to_find, old_metadata):
+    for metadata_info in old_metadata:
+        for key, val in metadata_info.items():
+            if key == 'div_id' and val == id_to_find:
+                return metadata_info
+    return None
+
+
+def extract_recording_metadata(recording_boxes, driver, old_metadata, download_duplicates):
     print_log('Extracting the metadata from each recording: ')
     recording_metadata = list()
+    indices_to_download = list()
 
     for i, recording_box in enumerate(recording_boxes):
-        print_log(f'Working on recording #{i+1}.')
+        box_div_id = recording_box.get_property('id')
+
+        # Skip this recording if it is already documented.
+        if download_duplicates is False:
+            old_metadata_info = find_div_id_in_metadata(box_div_id, old_metadata)
+            if old_metadata_info is not None:
+                recording_metadata.append(old_metadata_info)
+                print_log(f"Skipping recording #{i + 1}.")
+                continue
+
+        indices_to_download.append(i)
+
+        print_log(f'Working on recording #{i + 1}.')
         recording_date = str()
         recording_time = str()
         recording_device = str()
@@ -211,92 +240,95 @@ def extract_recording_metadata(recording_boxes, driver):
             'message': recording_text,
             'date': recording_date,
             'time': recording_time,
-            'device': recording_device
+            'device': recording_device,
+            'div_id': box_div_id,
         }
         recording_metadata.append(metadata)
 
-    return recording_metadata
+        # Open box for audio ID extraction later
+        expand_button_list = recording_box.find_elements_by_xpath(".//button")
+        if len(expand_button_list) == 0:
+            print_log("ERROR: The script cannot find the button to expand the recording box. This means that "
+                      "this recording cannot be extracted (but the metadata can still be).")
+            indices_to_download.append(i)
+        else:
+            expand_button_list[0].click()
+            time.sleep(1)
+
+    return recording_metadata, indices_to_download
 
 
-def setup(driver, start_date, cookies_file, config_file, info_file):
+def extract_uid_from_recordings(driver, indices_to_download, metadata):
+    print_log('Extracting Audio ID.')
+    events = [json.loads(entry['message'])['message'] for entry in driver.get_log('performance')]
+    response_events = list(filter(check_for_uid, events))
+
+    if len(response_events) != len(indices_to_download):
+        print_log('WARNING: The number of network events to find the uid do not equal the number of recordings'
+                  'there are on the alexa website. This could be because the site format has changed. The '
+                  'audio ID will not be noted down in this run.')
+    else:
+        for idx, event in enumerate(response_events):
+            idx_to_update = indices_to_download[idx]
+            metadata[idx_to_update].update({'audio_id': get_uid_from_event(event)})
+
+
+def get_wav_from_audio_id(audio_id, user_agent, cookies, audio_file):
+    url_base = 'https://www.amazon.com/alexa-privacy/apd/rvh/audio?uid='
+    full_url = url_base + audio_id
+    headers = {'User-Agent': user_agent}
+    response = requests.get(full_url, headers=headers, cookies=cookies)
+    with open(audio_file, "wb+") as f:
+        f.write(response.content)
+
+
+def download_wav_files(audio_ids, user_agent, cookies, output_file):
+    print_log('Downloading wav files.')
+    for i, audio_id in enumerate(audio_ids):
+        audio_file = os.path.join(output_file, f'{i}.wav')
+        get_wav_from_audio_id(audio_id, user_agent, cookies, audio_file)
+
+
+def setup(driver, start_date, cookies_file, config_file, info_file, output_file, download_duplicates, user_agent):
     print_log('Starting metadata extraction.')
-    driver.get("https://alexa.amazon.com")
     with open(config_file, "r") as f:
         credentials = json.load(f)
     username = credentials['username']
     password = credentials['password']
 
-    enter_username_and_password(driver, username, password, slow=True)
+    enter_username_and_password(driver, username, password, slow=True, remember_me=True)
     captcha(driver, username, password)
     email_verification(driver)
 
-    print_log('Dumping cookies.')
+    print_log("Loading old cookies.")
+
     cookies = driver.get_cookies()
-    with open(cookies_file, "w") as f:
-        json.dump(cookies, f, indent=4)
+    dump_cookies(cookies_file, cookies)
 
     search_for_recordings(driver, start_date)
-    open_all_recordings(driver)
+    reveal_all_recordings(driver)
     recording_boxes = driver.find_elements_by_class_name('apd-content-box')
-    recording_metadata = extract_recording_metadata(recording_boxes, driver)
+    old_recording_metadata = get_old_metadata(info_file)
 
-    # # mainBox is the div for the commands
-    # recordings = []
-    # navigation_available = True
-    #
-    # while navigation_available:
-    #     ipdb.set_trace()
-    #     try:
-    #         events = [json.loads(entry['message'])['message'] for entry in driver.get_log('performance')]
-    #         response_events = list(filter(check_for_uid, events))
-    #         for e in response_events:
-    #             audio_data = get_audio_data_from_event(e, username, password)
-    #             audio_id = audio_data.get('utteranceId')
-    #             is_audio_playable = audio_data.get('audioPlayable')
-    #             date = 1
-    #
-    #         elem = WebDriverWait(driver, 10).until(EC.presence_of_all_elements_located(
-    #         (By.CLASS_NAME, "apd-content-box")))
-    #
-    #         for e in elem:
-    #             text_info = e.find_element_by_class_name("textInfo")
-    #             audio_id = text_info.find_element_by_class_name("playButton").get_attribute("attr")
-    #             try:
-    #                 text_elem = text_info.find_element_by_class_name("summaryCss")
-    #             except NoSuchElementException:
-    #                 text_elem = text_info.find_element_by_class_name("summaryNotAvailableCss")
-    #
-    #             text = text_elem.text
-    #             date_elem = text_info.find_element_by_class_name("subInfo")
-    #             date = date_elem.text
-    #             recording_info = {
-    #                 "audio-id": audio_id,
-    #                 "text": text,
-    #                 "date": date
-    #             }
-    #             recordings.append(recording_info)
-    #
-    #         next_elem = WebDriverWait(driver, 10).until(
-    #             EC.element_to_be_clickable((By.CLASS_NAME, "paginationControls"))).find_element_by_id("nextButton")
-    #
-    #         navigation_available = "navigationAvailable" in next_elem.get_attribute("class")
-    #         if navigation_available:
-    #             next_elem.click()
-    #     except TimeoutException as e:
-    #         print(e)
+    recording_metadata, indices_to_download = \
+        extract_recording_metadata(recording_boxes, driver, old_recording_metadata, download_duplicates)
+
+    extract_uid_from_recordings(driver, sorted(indices_to_download), recording_metadata)
 
     with open(info_file, "w") as f:
         json.dump(recording_metadata, f, indent=4)
 
+    recording_ids = get_audio_ids(recording_metadata)
+    formatted_cookies = format_cookies_for_request(cookies)
+    download_wav_files(recording_ids, user_agent, formatted_cookies, output_file)
+
     driver.quit()
 
 
-def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, show):
-    url = "https://www.amazon.com/hz/mycd/playOption?id="
-
+def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, system, show, download_duplicates):
     ua = UserAgent()
     user_agent = ua.random
-    
+
     last_credential_path = "./last_credentials.json"
     # raise err if someone change use new account
     if os.path.isfile(last_credential_path):
@@ -316,63 +348,30 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, s
                 new_cred = json.load(new_c)
                 json.dump(new_cred, old_c)
 
-    # with open(cookies_file, "r") as f:
-    #     cookies = json.load(f)
-
-    driver = create_driver(user_agent, show=show)
-    setup(driver, end_date, cookies_file, config_file, info_file)
-
-    # if not os.path.exists(output_dir):
-    #     os.mkdir(output_dir)
-
-    # with open(info_file, "r") as f:
-    #     recordings = json.load(f)
-    #
-    # formatted_cookies = {}
-    # for cookie in cookies:
-    #     formatted_cookies.update({cookie["name"]: cookie["value"]})
-
-    # for recording in recordings:
-    #     audio_id = recording["audio-id"]
-    #
-    #     recording_date = recording["date"]
-    #     headers = {
-    #         'User-Agent': user_agent
-    #     }
-    #
-    #     formatted_date = format_date(recording_date)
-    #     print('downloading')
-    #     audio_file = get_file_path(formatted_date, output_dir, "wav")
-    #     text_file = get_file_path(formatted_date, output_dir, "txt")
-    #
-    #     response = requests.get(url + audio_id, headers=headers, cookies=formatted_cookies)
-    #
-    #     text = recording["text"]
-    #     with open(audio_file, "wb") as f:
-    #         f.write(response.content)
-    #
-    #     with open(text_file, "w") as f:
-    #         f.write(text)
+    driver = create_driver(user_agent, show=show, system=system)
+    setup(driver, end_date, cookies_file, config_file, info_file, output_dir, download_duplicates, user_agent)
 
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--config", type=str, help="specify a file for credential information", required=False,
-                        default="credentials.json")
-    parser.add_argument("-i", "--info", type=str, help="specify a file for the recording info", required=False,
-                        default="recordinginfo.json")
-    parser.add_argument("-C", "--cookies", type=str, help="specify a file for the stored cookies", required=False,
-                        default="cookies.json")
-    parser.add_argument("-o", "--output", type=str, help="specify a directory to output files", required=False,
-                        default="output")
-    parser.add_argument("-d", "--date", type=str, help="specify a date in the format 'YYYY/MM/DD HH:MM:SS'",
-                        required=True)
-    parser.add_argument("-s", "--show", type=bool, help="show the chrome window as it searches for recordings. ",
-                        default=False, required=False)
-
-    args = parser.parse_args()
-    ensure_file_existence(args.config)
-    get_recordings(args.config, args.info, args.cookies, args.output, format_arg_date(args.date), args.show)
+@click.command()
+@click.option("-c", "--config", type=str, help="specify a file for credential information", required=False,
+              default="credentials.json")
+@click.option("-i", "--info", type=str, help="specify a file for the recording info", required=False,
+              default="recordinginfo.json")
+@click.option("-C", "--cookies", type=str, help="specify a file for the stored cookies", required=False,
+              default="cookies.json")
+@click.option("-o", "--output", type=str, help="specify a directory to output files", required=False,
+              default="output")
+@click.option("-d", "--date", type=str, help="specify a date in the format 'YYYY/MM/DD HH:MM:SS'",
+              required=True)
+@click.option("--system", type=click.Choice(['linux', 'mac'], case_sensitive=False), required=False, default='linux',
+              help='Specify the OS you are working on (linux or mac)')
+@click.option('--show', is_flag=True, help="show the chrome window as it searches for recordings.")
+@click.option('--download-duplicates', is_flag=True, help="download recordings that have already been downloaded.")
+def main(config, info, cookies, output, date, system, show, download_duplicates):
+    show = False if show is None else show
+    download_duplicates = False if download_duplicates is None else download_duplicates
+    ensure_file_existence(config)
+    get_recordings(config, info, cookies, output, format_arg_date(date), system, show, download_duplicates)
 
 
 if __name__ == "__main__":

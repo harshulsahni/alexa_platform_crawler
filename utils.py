@@ -1,6 +1,8 @@
 import datetime
 import re
 import os
+import json
+import urllib.parse
 
 
 def raise_exception(e, driver):
@@ -50,3 +52,51 @@ def get_file_path(name, directory, extension):
 def ensure_file_existence(file_path):
     if not os.path.isfile(file_path):
         raise OSError('Error: the file {} does not exist. Please check the path'.format(file_path))
+
+
+def dump_cookies(cookie_file, cookies):
+    print_log('Dumping any other new cookies.')
+    with open(cookie_file, "w") as f:
+        json.dump(cookies, f, indent=4)
+
+
+def get_uid_from_event(e):
+    url = e.get('params').get('response').get('url')
+    unquoted_url = urllib.parse.unquote(url)
+    if '=' not in unquoted_url:
+        return unquoted_url
+    else:
+        audio_id = unquoted_url.split('=')[-1]
+        return audio_id
+
+
+def get_old_metadata(metadata_info_filepath):
+    with open(metadata_info_filepath, 'r') as f:
+        metadata = json.load(f)
+    return metadata
+
+
+def get_old_cookies(cookie_file):
+    with open(cookie_file, 'r') as f:
+        cookies = json.load(f)
+    return cookies
+
+
+def add_cookies_to_driver(cookies, driver):
+    for cookie in cookies:
+        driver.add_cookie(cookie)
+
+
+def get_audio_ids(metadata):
+    ids = []
+    for data in metadata:
+        if "audio_id" in data:
+            ids.append(data.get("audio_id"))
+    return ids
+
+
+def format_cookies_for_request(cookies):
+    formatted_cookies = {}
+    for cookie in cookies:
+        formatted_cookies.update({cookie["name"]: cookie["value"]})
+    return formatted_cookies
