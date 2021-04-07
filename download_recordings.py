@@ -14,6 +14,7 @@ from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -131,7 +132,7 @@ def enter_username_and_password(driver, username, password, slow=False, submit=T
     driver.implicitly_wait(2)
 
 
-def search_for_recordings(driver, start_date):
+def search_for_recordings(driver, start_date, system='linux'):
     print_log('Searching for recordings.')
     driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
     driver.implicitly_wait(5)
@@ -145,8 +146,9 @@ def search_for_recordings(driver, start_date):
     custom_button.click()
     driver.implicitly_wait(1)
 
+    ctrl_key = Keys.COMMAND if system == 'mac' else Keys.CONTROL
     starting_date = driver.find_element_by_id('date-start')
-    starting_date.clear()
+    starting_date.send_keys(ctrl_key + 'A')
     starting_date.send_keys(start_date)
 
 
@@ -291,7 +293,7 @@ def download_wav_files(audio_ids, user_agent, cookies, output_file):
         get_wav_from_audio_id(audio_id, user_agent, cookies, audio_file)
 
 
-def setup(driver, start_date, cookies_file, config_file, info_file, output_file, download_duplicates, user_agent):
+def setup(driver, start_date, cookies_file, config_file, info_file, output_file, download_duplicates, user_agent, system):
     print_log('Starting metadata extraction.')
     with open(config_file, "r") as f:
         credentials = json.load(f)
@@ -307,7 +309,7 @@ def setup(driver, start_date, cookies_file, config_file, info_file, output_file,
     cookies = driver.get_cookies()
     dump_cookies(cookies_file, cookies)
 
-    search_for_recordings(driver, start_date)
+    search_for_recordings(driver, start_date, system=system)
     reveal_all_recordings(driver)
     recording_boxes = driver.find_elements_by_class_name('apd-content-box')
     old_recording_metadata = get_old_metadata(info_file)
@@ -352,7 +354,7 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, s
                 json.dump(new_cred, old_c)
 
     driver = create_driver(user_agent, show=show, system=system, driver_location=driver_location)
-    setup(driver, end_date, cookies_file, config_file, info_file, output_dir, download_duplicates, user_agent)
+    setup(driver, end_date, cookies_file, config_file, info_file, output_dir, download_duplicates, user_agent, system)
 
 
 @click.command()
