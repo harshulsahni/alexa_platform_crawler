@@ -21,7 +21,7 @@ from utils import print_log, raise_exception, ensure_file_existence, format_arg_
     get_uid_from_event, get_old_metadata, get_audio_ids, format_cookies_for_request
 
 
-def create_driver(user_agent, show=False, system='linux'):
+def create_driver(user_agent, show=False, system='linux', driver_location=None):
     print_log("Setting up the driver.")
     chrome_options = webdriver.ChromeOptions()
     chrome_options.add_argument("user-agent=" + str(user_agent))
@@ -29,12 +29,13 @@ def create_driver(user_agent, show=False, system='linux'):
     caps = DesiredCapabilities.CHROME
     caps['goog:loggingPrefs'] = {'performance': 'ALL'}
     if system == 'mac':
-        driver = webdriver.Chrome('/usr/local/bin/chromedriver', desired_capabilities=caps, options=chrome_options)
+        driver_location = driver_location if driver_location else '/usr/local/bin/chromedriver'
+        driver = webdriver.Chrome(driver_location, desired_capabilities=caps, options=chrome_options)
     else:
         Display(visible=show, size=(1200, 600)).start()
         chrome_options.add_experimental_option("detach", True)
-        driver = webdriver.Chrome(executable_path="/usr/bin/chromedriver", desired_capabilities=caps,
-                                  options=chrome_options)
+        driver_location = driver_location if driver_location else '/usr/bin/chromedriver'
+        driver = webdriver.Chrome(driver_location, desired_capabilities=caps, options=chrome_options)
     print_log("Finished setting up the driver.")
     return driver
 
@@ -325,7 +326,8 @@ def setup(driver, start_date, cookies_file, config_file, info_file, output_file,
     driver.quit()
 
 
-def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, system, show, download_duplicates):
+def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, system, show, download_duplicates,
+                   driver_location):
     ua = UserAgent()
     user_agent = ua.random
 
@@ -348,7 +350,7 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, s
                 new_cred = json.load(new_c)
                 json.dump(new_cred, old_c)
 
-    driver = create_driver(user_agent, show=show, system=system)
+    driver = create_driver(user_agent, show=show, system=system, driver_location=driver_location)
     setup(driver, end_date, cookies_file, config_file, info_file, output_dir, download_duplicates, user_agent)
 
 
@@ -367,11 +369,12 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, s
               help='Specify the OS you are working on (linux or mac)')
 @click.option('--show', is_flag=True, help="show the chrome window as it searches for recordings.")
 @click.option('--download-duplicates', is_flag=True, help="download recordings that have already been downloaded.")
-def main(config, info, cookies, output, date, system, show, download_duplicates):
+@click.option('--driver', type=str, help="Specify file location of driver.")
+def main(config, info, cookies, output, date, system, show, download_duplicates, driver):
     show = False if show is None else show
     download_duplicates = False if download_duplicates is None else download_duplicates
     ensure_file_existence(config)
-    get_recordings(config, info, cookies, output, format_arg_date(date), system, show, download_duplicates)
+    get_recordings(config, info, cookies, output, format_arg_date(date), system, show, download_duplicates, driver)
 
 
 if __name__ == "__main__":
