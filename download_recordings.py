@@ -27,6 +27,7 @@ def create_driver(user_agent, show=False, system='linux', driver_location=None):
     chrome_options.add_argument("user-agent=" + str(user_agent))
 
     caps = DesiredCapabilities.CHROME
+    caps['loggingPrefs'] = {'performance': 'ALL'}
     caps['goog:loggingPrefs'] = {'performance': 'ALL'}
     if system == 'mac':
         driver_location = driver_location if driver_location else '/usr/local/bin/chromedriver'
@@ -316,7 +317,7 @@ def setup(driver, start_date, cookies_file, config_file, info_file, output_file,
 
     extract_uid_from_recordings(driver, sorted(indices_to_download), recording_metadata)
 
-    with open(info_file, "w") as f:
+    with open(info_file, "w+") as f:
         json.dump(recording_metadata, f, indent=4)
 
     recording_ids = get_audio_ids(recording_metadata)
