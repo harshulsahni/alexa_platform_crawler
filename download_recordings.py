@@ -146,9 +146,11 @@ def search_for_recordings(driver, start_date, system='linux'):
     custom_button.click()
     driver.implicitly_wait(1)
 
-    ctrl_key = Keys.COMMAND if system == 'mac' else Keys.CONTROL
     starting_date = driver.find_element_by_id('date-start')
-    starting_date.send_keys(ctrl_key + 'A')
+    if system == 'mac':
+        starting_date.send_keys(Keys.COMMAND + 'A')
+    else:
+        starting_date.clear()
     starting_date.send_keys(start_date)
 
 
