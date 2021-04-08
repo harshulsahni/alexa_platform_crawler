@@ -5,6 +5,7 @@ import os
 import time
 import urllib.parse
 import urllib.request
+from pathlib import Path
 
 import click
 import requests
@@ -12,15 +13,15 @@ from fake_useragent import UserAgent
 from pyvirtualdisplay import Display
 from selenium import webdriver
 from selenium.common.exceptions import NoSuchElementException
+from selenium.common.exceptions import WebDriverException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
-from selenium.common.exceptions import WebDriverException
 
-from utils import print_log, raise_exception, ensure_file_existence, format_arg_date, dump_cookies, \
-    get_uid_from_event, get_old_metadata, get_audio_ids, format_cookies_for_request
+from utils import print_log, raise_exception, ensure_file_existence, format_arg_date, format_date_year_month_day, \
+    dump_cookies, get_uid_from_event, get_old_metadata, get_audio_ids, format_cookies_for_request
 
 
 def create_driver(user_agent, show=False, system='linux', driver_location=None):
@@ -293,14 +294,37 @@ def get_wav_from_audio_id(audio_id, user_agent, cookies, audio_file):
         f.write(response.content)
 
 
-def download_wav_files(audio_ids, user_agent, cookies, output_file):
+def download_wav_files(audio_ids, user_agent, cookies, output_folder, end_date):
+    year, month, day = format_date_year_month_day(end_date)
+    folder_string = f"{year}-{month}-{day}"
+    cwd = os.getcwd()
+
+    if output_folder not in [d.name for d in Path(cwd).iterdir()]:
+        print_log("The output folder does not seem to be in the directory. Making a folder here: "
+                  f"{os.path.join(cwd, output_folder)}")
+        os.mkdir(output_folder)
+    output_path = Path(output_folder)
+
+    if folder_string in [d.name for d in output_path.iterdir()]:
+        day_folder: Path = output_path / folder_string
+        recording_trials = [int(str(r.name)) for r in day_folder.iterdir() if r.is_dir()]
+        new_recording_trial = max(recording_trials) + 1 if len(recording_trials) > 0 else 0
+        recording_path = output_path / folder_string / str(new_recording_trial)
+        if recording_path not in [str(d) for d in (output_path / folder_string).iterdir()]:
+            os.mkdir(recording_path)
+    else:
+        os.mkdir(output_path / folder_string)
+        os.mkdir(output_path / folder_string / '0')
+        recording_path = output_path / folder_string / '0'
+
     print_log('Downloading wav files.')
     for i, audio_id in enumerate(audio_ids):
-        audio_file = os.path.join(output_file, f'{i}.wav')
+        audio_file = os.path.join(recording_path, f'{i}.wav')
         get_wav_from_audio_id(audio_id, user_agent, cookies, audio_file)
 
 
-def setup(driver, start_date, cookies_file, config_file, info_file, output_file, download_duplicates, user_agent, system):
+def setup(driver, end_date, cookies_file, config_file, info_file, output_file, download_duplicates, user_agent,
+          system):
     print_log('Starting metadata extraction.')
     with open(config_file, "r") as f:
         credentials = json.load(f)
@@ -317,12 +341,12 @@ def setup(driver, start_date, cookies_file, config_file, info_file, output_file,
     dump_cookies(cookies_file, cookies)
 
     try:
-        search_for_recordings(driver, start_date, system=system)
+        search_for_recordings(driver, end_date, system=system)
         reveal_all_recordings(driver)
     except WebDriverException:
         driver.implicitly_wait(5)
-        print_log("ERROR. Trying to search again.")
-        search_for_recordings(driver, start_date, system=system)
+        print_log("WARNING. Finding the recordings errored out. Trying to search again.")
+        search_for_recordings(driver, end_date, system=system)
         driver.implicitly_wait(5)
         reveal_all_recordings(driver)
         driver.implicitly_wait(5)
@@ -340,7 +364,7 @@ def setup(driver, start_date, cookies_file, config_file, info_file, output_file,
 
     recording_ids = get_audio_ids(recording_metadata)
     formatted_cookies = format_cookies_for_request(cookies)
-    download_wav_files(recording_ids, user_agent, formatted_cookies, output_file)
+    download_wav_files(recording_ids, user_agent, formatted_cookies, output_file, end_date)
 
     driver.quit()
 
@@ -381,7 +405,7 @@ def get_recordings(config_file, info_file, cookies_file, output_dir, end_date, s
 @click.option("-C", "--cookies", type=str, help="specify a file for the stored cookies", required=False,
               default="cookies.json")
 @click.option("-o", "--output", type=str, help="specify a directory to output files", required=False,
-              default="output")
+              default="recordings")
 @click.option("-d", "--date", type=str, help="specify a date in the format 'YYYY/MM/DD HH:MM:SS'",
               required=True)
 @click.option("--system", type=click.Choice(['linux', 'mac'], case_sensitive=False), required=False, default='linux',
