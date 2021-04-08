@@ -294,8 +294,8 @@ def get_wav_from_audio_id(audio_id, user_agent, cookies, audio_file):
         f.write(response.content)
 
 
-def download_wav_files(audio_ids, user_agent, cookies, output_folder, end_date):
-    year, month, day = format_date_year_month_day(end_date)
+def download_wav_files(audio_ids, user_agent, cookies, output_folder, date):
+    year, month, day = format_date_year_month_day(date)
     folder_string = f"{year}-{month}-{day}"
     cwd = os.getcwd()
 
@@ -343,7 +343,7 @@ def setup(driver, end_date, cookies_file, config_file, info_file, output_file, d
     try:
         search_for_recordings(driver, end_date, system=system)
         reveal_all_recordings(driver)
-    except WebDriverException:
+    except WebDriverException or NoSuchElementException:
         driver.implicitly_wait(5)
         print_log("WARNING. Finding the recordings errored out. Trying to search again.")
         search_for_recordings(driver, end_date, system=system)
@@ -364,7 +364,7 @@ def setup(driver, end_date, cookies_file, config_file, info_file, output_file, d
 
     recording_ids = get_audio_ids(recording_metadata)
     formatted_cookies = format_cookies_for_request(cookies)
-    download_wav_files(recording_ids, user_agent, formatted_cookies, output_file, end_date)
+    download_wav_files(recording_ids, user_agent, formatted_cookies, output_file, time.strftime("%m/%d/%Y"))
 
     driver.quit()
 
