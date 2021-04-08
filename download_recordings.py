@@ -153,6 +153,8 @@ def search_for_recordings(driver, start_date, system='linux'):
     else:
         starting_date.clear()
     starting_date.send_keys(start_date)
+    driver.implicitly_wait(5)
+    # driver.find_element_by_xpath("//body").click()
 
 
 def check_for_uid(d):
@@ -316,7 +318,9 @@ def setup(driver, start_date, cookies_file, config_file, info_file, output_file,
         search_for_recordings(driver, start_date, system=system)
         reveal_all_recordings(driver)
     except WebDriverException:
+        print_log("ERROR. Trying to search again.")
         search_for_recordings(driver, start_date, system=system)
+        reveal_all_recordings(driver)
 
     recording_boxes = driver.find_elements_by_class_name('apd-content-box')
     old_recording_metadata = get_old_metadata(info_file)
