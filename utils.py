@@ -39,6 +39,11 @@ def format_arg_date(data):
     return date.strftime("%m/%d/%Y")
 
 
+def format_date_year_month_day(date):
+    month, day, year = date.split('/')
+    return year, month, day
+
+
 def get_file_path(name, directory, extension):
     if not os.path.exists(directory + "/" + name + "." + extension):
         return directory + "/" + name + "." + extension
