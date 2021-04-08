@@ -17,6 +17,7 @@ from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import WebDriverException
 
 from utils import print_log, raise_exception, ensure_file_existence, format_arg_date, dump_cookies, \
     get_uid_from_event, get_old_metadata, get_audio_ids, format_cookies_for_request
@@ -311,8 +312,12 @@ def setup(driver, start_date, cookies_file, config_file, info_file, output_file,
     cookies = driver.get_cookies()
     dump_cookies(cookies_file, cookies)
 
-    search_for_recordings(driver, start_date, system=system)
-    reveal_all_recordings(driver)
+    try:
+        search_for_recordings(driver, start_date, system=system)
+        reveal_all_recordings(driver)
+    except WebDriverException:
+        search_for_recordings(driver, start_date, system=system)
+
     recording_boxes = driver.find_elements_by_class_name('apd-content-box')
     old_recording_metadata = get_old_metadata(info_file)
 
