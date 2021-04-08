@@ -343,7 +343,7 @@ def setup(driver, end_date, cookies_file, config_file, info_file, output_file, d
     try:
         search_for_recordings(driver, end_date, system=system)
         reveal_all_recordings(driver)
-    except WebDriverException or NoSuchElementException:
+    except (WebDriverException, NoSuchElementException):
         driver.implicitly_wait(5)
         print_log("WARNING. Finding the recordings errored out. Trying to search again.")
         search_for_recordings(driver, end_date, system=system)
