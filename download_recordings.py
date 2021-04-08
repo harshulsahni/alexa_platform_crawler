@@ -154,7 +154,6 @@ def search_for_recordings(driver, start_date, system='linux'):
         starting_date.clear()
     starting_date.send_keys(start_date)
     driver.implicitly_wait(5)
-    # driver.find_element_by_xpath("//body").click()
 
 
 def check_for_uid(d):
@@ -198,6 +197,8 @@ def extract_recording_metadata(recording_boxes, driver, old_metadata, download_d
     print_log('Extracting the metadata from each recording: ')
     recording_metadata = list()
     indices_to_download = list()
+    num_recordings = len(recording_boxes)
+    print_log(f"Total recordings: {num_recordings}.")
 
     for i, recording_box in enumerate(recording_boxes):
         box_div_id = recording_box.get_property('id')
@@ -273,9 +274,10 @@ def extract_uid_from_recordings(driver, indices_to_download, metadata):
     response_events = list(filter(check_for_uid, events))
 
     if len(response_events) != len(indices_to_download):
-        print_log('WARNING: The number of network events to find the uid do not equal the number of recordings'
-                  'there are on the alexa website. This could be because the site format has changed. The '
-                  'audio ID will not be noted down in this run.')
+        print_log(f'WARNING: The number of network events to find the uid ({len(response_events)}) '
+                  f'do not equal the number of recordings there are on the alexa website ({len(indices_to_download)}). '
+                  'This could be because the site format has changed. The audio files will not be '
+                  'downloaded in this run.')
     else:
         for idx, event in enumerate(response_events):
             idx_to_update = indices_to_download[idx]
@@ -318,9 +320,12 @@ def setup(driver, start_date, cookies_file, config_file, info_file, output_file,
         search_for_recordings(driver, start_date, system=system)
         reveal_all_recordings(driver)
     except WebDriverException:
+        driver.implicitly_wait(5)
         print_log("ERROR. Trying to search again.")
         search_for_recordings(driver, start_date, system=system)
+        driver.implicitly_wait(5)
         reveal_all_recordings(driver)
+        driver.implicitly_wait(5)
 
     recording_boxes = driver.find_elements_by_class_name('apd-content-box')
     old_recording_metadata = get_old_metadata(info_file)
