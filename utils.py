@@ -76,6 +76,10 @@ def get_uid_from_event(e):
 
 
 def get_old_metadata(metadata_info_filepath):
+    if not os.path.exists(metadata_info_filepath) or metadata_info_filepath not in os.listdir():
+        print_log("Metadata file not found. Creating a new one.")
+        with open(metadata_info_filepath, 'w+') as f:
+            f.write("[\n\n]")
     with open(metadata_info_filepath, 'r') as f:
         metadata = json.load(f)
     return metadata

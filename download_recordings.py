@@ -6,6 +6,7 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from urllib3.exceptions import ProtocolError
 
 import click
 import requests
@@ -137,13 +138,16 @@ def enter_username_and_password(driver, username, password, slow=False, submit=T
 def search_for_recordings(driver, start_date, system='linux'):
     print_log('Searching for recordings.')
     driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
+    time.sleep(2)
     driver.implicitly_wait(5)
     display_button = driver.find_element_by_id('filters-selected-bar')
     display_button.click()
     driver.implicitly_wait(1)
+    time.sleep(0.5)
     filter_date_button = driver.find_element_by_class_name('filter-by-date-menu')
     filter_date_button.click()
     driver.implicitly_wait(1)
+    time.sleep(0.5)
     custom_button = driver.find_element_by_id('custom-date-range-filter')
     custom_button.click()
     driver.implicitly_wait(1)
@@ -227,9 +231,9 @@ def extract_recording_metadata(recording_boxes, driver, old_metadata, download_d
                 recording_box.find_elements_by_xpath(".//div[@class='record-summary-preview replacement-text']")
 
             if len(audio_not_understood_msg) == 0:
-                print_log("ERROR: Cannot seem to find the transcription of the recording. Going to error out.")
-                raise_exception(NoSuchElementException('Could not find the transcription of the recording.'),
-                                driver)
+                print_log("WARNING: Cannot seem to find the transcription of the recording. Going to replace "
+                          "with no text for this recording.")
+                message_div = ""
             else:
                 message_div = audio_not_understood_msg
 
@@ -343,13 +347,18 @@ def setup(driver, end_date, cookies_file, config_file, info_file, output_file, d
     try:
         search_for_recordings(driver, end_date, system=system)
         reveal_all_recordings(driver)
-    except (WebDriverException, NoSuchElementException):
+    except (WebDriverException, NoSuchElementException, ProtocolError):
         driver.implicitly_wait(5)
         print_log("WARNING. Finding the recordings errored out. Trying to search again.")
         search_for_recordings(driver, end_date, system=system)
         driver.implicitly_wait(5)
         reveal_all_recordings(driver)
         driver.implicitly_wait(5)
+    except ProtocolError as e:
+        print_log("ERROR. Amazon has closed this connection, likely because it has identified this script "
+                  "and will stop it. This can happen from time to time. Please run this script again.")
+        raise e
+
 
     recording_boxes = driver.find_elements_by_class_name('apd-content-box')
     old_recording_metadata = get_old_metadata(info_file)
