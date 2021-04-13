@@ -7,6 +7,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from urllib3.exceptions import ProtocolError
+from http.client import RemoteDisconnected
 
 import click
 import requests
@@ -138,7 +139,6 @@ def enter_username_and_password(driver, username, password, slow=False, submit=T
 def search_for_recordings(driver, start_date, system='linux'):
     print_log('Searching for recordings.')
     driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
-    time.sleep(2)
     driver.implicitly_wait(5)
     display_button = driver.find_element_by_id('filters-selected-bar')
     display_button.click()
@@ -205,6 +205,8 @@ def extract_recording_metadata(recording_boxes, driver, old_metadata, download_d
     num_recordings = len(recording_boxes)
     print_log(f"Total recordings: {num_recordings}.")
 
+    num_skipped_recordings = 0
+
     for i, recording_box in enumerate(recording_boxes):
         box_div_id = recording_box.get_property('id')
 
@@ -215,8 +217,6 @@ def extract_recording_metadata(recording_boxes, driver, old_metadata, download_d
                 recording_metadata.append(old_metadata_info)
                 print_log(f"Skipping recording #{i + 1}.")
                 continue
-
-        indices_to_download.append(i)
 
         print_log(f'Working on recording #{i + 1}.')
         recording_date = str()
@@ -231,9 +231,9 @@ def extract_recording_metadata(recording_boxes, driver, old_metadata, download_d
                 recording_box.find_elements_by_xpath(".//div[@class='record-summary-preview replacement-text']")
 
             if len(audio_not_understood_msg) == 0:
-                print_log("WARNING: Cannot seem to find the transcription of the recording. Going to replace "
-                          "with no text for this recording.")
-                message_div = ""
+                print_log("Cannot seem to find the transcription of the recording. Going to skip this recording.")
+                num_skipped_recordings += 1
+                continue
             else:
                 message_div = audio_not_understood_msg
 
@@ -259,6 +259,7 @@ def extract_recording_metadata(recording_boxes, driver, old_metadata, download_d
             'div_id': box_div_id,
         }
         recording_metadata.append(metadata)
+        indices_to_download.append(i - num_skipped_recordings)
 
         # Open box for audio ID extraction later
         expand_button_list = recording_box.find_elements_by_xpath(".//button")
@@ -347,7 +348,7 @@ def setup(driver, end_date, cookies_file, config_file, info_file, output_file, d
     try:
         search_for_recordings(driver, end_date, system=system)
         reveal_all_recordings(driver)
-    except (WebDriverException, NoSuchElementException, ProtocolError):
+    except (WebDriverException, NoSuchElementException, ProtocolError, RemoteDisconnected):
         driver.implicitly_wait(5)
         print_log("WARNING. Finding the recordings errored out. Trying to search again.")
         search_for_recordings(driver, end_date, system=system)
