@@ -1,8 +1,11 @@
 import datetime
-import re
-import os
 import json
+import os
+import re
 import urllib.parse
+from typing import List, Dict, Any
+
+from fake_useragent import UserAgent
 
 
 def raise_exception(e, driver):
@@ -61,7 +64,7 @@ def ensure_file_existence(file_path):
 
 def dump_cookies(cookie_file, cookies):
     print_log('Dumping any other new cookies.')
-    with open(cookie_file, "w") as f:
+    with open(cookie_file, "w+") as f:
         json.dump(cookies, f, indent=4)
 
 
@@ -104,8 +107,13 @@ def get_audio_ids(metadata):
     return ids
 
 
-def format_cookies_for_request(cookies):
+def format_cookies_for_request(cookies: List[Dict[str, Any]]) -> Dict[str, Any]:
     formatted_cookies = {}
     for cookie in cookies:
         formatted_cookies.update({cookie["name"]: cookie["value"]})
     return formatted_cookies
+
+
+def create_user_agent() -> str:
+    ua = UserAgent()
+    return ua.random

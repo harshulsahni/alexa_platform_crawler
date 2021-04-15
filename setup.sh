@@ -1,4 +1,5 @@
-# The venv module provides support for creating lightweight “virtual environments” with their own site directories, optionally isolated from system site directories.
+# The venv module provides support for creating lightweight “virtual environments” with their own site directories,
+# optionally isolated from system site directories.
 sudo apt-get install python3-venv
 # Change python venv interpreter 
 python3 -m venv ./venv
