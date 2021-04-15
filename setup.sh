@@ -28,3 +28,6 @@ chmod +x install-chrome.sh
 ./install-chrome.sh
 # Create a credentials.json with the format of credentials.example but make sure to input your own username and password.
 cp credentials.example credentials.json
+# make the main download file executable
+chmod +x download_recordings.py
+echo "Setup has finished."
