@@ -16,7 +16,8 @@ pip3 install --upgrade virtualenv
 pip3 install pytz
 # Enter virtual env
 . venv/bin/activate
-# Install dependencies 
+# Install dependencies
+python -m pip install --upgrade pip
 pip install -r requirements.txt
 # Exit virtual env
 deactivate
