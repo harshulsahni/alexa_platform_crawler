@@ -1,9 +1,11 @@
 import datetime
 import json
 import os
-import re
+import time
 import urllib.parse
 from typing import List, Dict, Any, Tuple, Optional
+import sys
+import traceback
 
 from fake_useragent import UserAgent
 from selenium.webdriver.chrome.webdriver import WebDriver
@@ -33,7 +35,9 @@ def print_log(message: str, input_flag: bool = False) -> Optional[str]:
     :return: The input if the input was needed. Else, None.
     """
     if input_flag:
-        return input(f"{datetime.datetime.today().strftime('%Y-%m-%d %I:%M:%S')} | INPUT NEEDED: {message}")
+        return input(
+            f"{datetime.datetime.today().strftime('%Y-%m-%d %I:%M:%S')} | INPUT NEEDED: {message}"
+        )
     else:
         print(f"{datetime.datetime.today().strftime('%Y-%m-%d %I:%M:%S')} | {message}")
 
@@ -46,7 +50,7 @@ def format_date_year_month_day(date: str) -> Tuple[str, str, str]:
 
     :return: A tuple of the year, month, and day.
     """
-    month, day, year = date.split('/')
+    month, day, year = date.split("/")
     return year, month, day
 
 
@@ -59,7 +63,9 @@ def ensure_file_existence(file_path: str) -> None:
     :return: None.
     """
     if not os.path.isfile(file_path):
-        raise OSError('Error: the file {} does not exist. Please check the path'.format(file_path))
+        raise OSError(
+            "Error: the file {} does not exist. Please check the path".format(file_path)
+        )
 
 
 def dump_cookies(cookie_file: str, cookies: List[Dict[str, Any]]) -> None:
@@ -71,7 +77,7 @@ def dump_cookies(cookie_file: str, cookies: List[Dict[str, Any]]) -> None:
 
     :return: None.
     """
-    print_log('Dumping any other new cookies.')
+    print_log("Dumping any other new cookies.")
     with open(cookie_file, "w+") as f:
         json.dump(cookies, f, indent=4)
 
@@ -84,12 +90,12 @@ def get_uid_from_event(e: Dict[str, Any]) -> str:
 
     :return: The audio ID, as a string.
     """
-    url = e.get('params').get('response').get('url')
+    url = e.get("params").get("response").get("url")
     unquoted_url = urllib.parse.unquote(url)
-    if '=' not in unquoted_url:
+    if "=" not in unquoted_url:
         return unquoted_url
     else:
-        audio_id = unquoted_url.split('=')[-1]
+        audio_id = unquoted_url.split("=")[-1]
         return audio_id
 
 
@@ -101,13 +107,15 @@ def get_old_metadata(metadata_info_filepath: str) -> List[Dict[str, Any]]:
 
     :return: List of metadata for all recordings that were previously downloaded.
     """
-    if not os.path.exists(metadata_info_filepath) or metadata_info_filepath not in os.listdir():
+    if (
+        not os.path.exists(metadata_info_filepath)
+        or metadata_info_filepath not in os.listdir()
+    ):
         print_log("Metadata file not found. Creating a new one.")
-        with open(metadata_info_filepath, 'w+') as f:
+        with open(metadata_info_filepath, "w+") as f:
             f.write("[\n\n]")
-    with open(metadata_info_filepath, 'r') as f:
-        metadata = json.load(f)
-    return metadata
+    with open(metadata_info_filepath, "r") as f:
+        return json.load(f)
 
 
 def get_audio_ids(metadata: List[Dict[str, Any]]) -> List[str]:
@@ -148,3 +156,61 @@ def create_user_agent() -> str:
     """
     ua = UserAgent()
     return ua.random
+
+
+def load_credentials(
+    credentials_file: str, user: Optional[str]
+) -> List[Dict[str, str]]:
+    """
+    Loads all of the credentials from the credentials file.
+
+    :param credentials_file: File path of the file with all credentials.
+    :param user: Optional user to filter the credentials for. If not None, then the function will
+        only return credentials for that user.
+
+    :return: A list of credentials.
+    """
+    with open(credentials_file, "r") as creds:
+        credentials = json.load(creds)
+    if user is not None:
+        for user_credentials in credentials:
+            for username in user_credentials.items():
+                if username == user:
+                    return [user_credentials]
+
+        # else, no user can be found with that email. raise an error.
+        raise ValueError(
+            f'ERROR: The user "{user}" cannot be found in the credentials. Please double check'
+            f"this username with the usernames in the credentials file."
+        )
+    else:
+        return credentials
+
+
+def get_today_date_mm_dd_yyyy() -> str:
+    """
+    Returns today's date in mm-dd-YYYY format.
+
+    :return: Today's date.
+    """
+    return time.strftime("%m/%d/%Y")
+
+
+def get_full_stack() -> str:
+    """
+    Gets the full stack trace of a program when it raises an exception.
+
+    :return: The full stack error.
+    """
+    exc = sys.exc_info()[0]
+    if exc is not None:
+        f = sys.exc_info()[-1].tb_frame.f_back
+        stack = traceback.extract_stack(f)
+    else:
+        stack = traceback.extract_stack()[:-1]
+
+    traceback_line = "Traceback (most recent call last):\n"
+    stackstr = traceback_line + "".join(traceback.format_list(stack))
+    if exc is not None:
+        stackstr += "  " + traceback.format_exc().lstrip(traceback_line)
+    return stackstr

@@ -1,4 +1,4 @@
-#!venv/bin/python
+#!alexa_env/bin/python
 
 import json
 import os
@@ -32,6 +32,9 @@ from utils import (
     get_audio_ids,
     format_cookies_for_request,
     create_user_agent,
+    load_credentials,
+    get_today_date_mm_dd_yyyy,
+    get_full_stack,
 )
 
 
@@ -64,6 +67,7 @@ def create_driver(
     caps["loggingPrefs"] = {"performance": "ALL"}
     caps["goog:loggingPrefs"] = {"performance": "ALL"}
     if system.lower() == "mac":
+        chrome_options.add_experimental_option("detach", True)
         driver_location = (
             driver_location if driver_location else "/usr/local/bin/chromedriver"
         )
@@ -244,18 +248,18 @@ def search_for_recordings(
     """
     print_log("Searching for recordings.")
     driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
-    driver.implicitly_wait(5)
+    driver.implicitly_wait(10)
     display_button = driver.find_element_by_id("filters-selected-bar")
     display_button.click()
-    driver.implicitly_wait(1)
+    driver.implicitly_wait(2)
     time.sleep(0.5)
     filter_date_button = driver.find_element_by_class_name("filter-by-date-menu")
     filter_date_button.click()
-    driver.implicitly_wait(1)
+    driver.implicitly_wait(2)
     time.sleep(0.5)
     custom_button = driver.find_element_by_id("custom-date-range-filter")
     custom_button.click()
-    driver.implicitly_wait(1)
+    driver.implicitly_wait(5)
 
     starting_date = driver.find_element_by_id("date-start")
     if system == "mac":
@@ -492,63 +496,126 @@ def get_wav_from_audio_id(
         f.write(response.content)
 
 
+def get_recording_path(
+    date: str, output_folder: str, username: str, make_new_folder: bool = True
+):
+    """
+    Returns the path of which folder the recordings should be saved in.
+    Creates the following structure:
+    output_folder/
+    |
+    + username/
+      |
+      + year_month_day/
+        |
+        + 0/
+          |
+          + 0.wav
+          + 1.wav
+
+    :param date: The date at which the script ran on.
+    :param output_folder: The folder name to where the recordings will be downloaded to.
+    :param username: The username of the user running the script.
+    :param make_new_folder: Whether the script should make a new folder (True) or return the previous folder (False).
+
+    :return: The path of the folder where the next recordings will be saved.
+    """
+    year, month, day = format_date_year_month_day(date)
+    cwd = os.getcwd()
+    date_folder_name = f"{year}-{month}-{day}"
+
+    output_full_path = os.path.join(cwd, output_folder)
+    if not os.path.exists(output_full_path):
+        print_log(
+            "The output folder does not seem to be in the directory. Making a folder here: "
+            f"{output_full_path}"
+        )
+        os.mkdir(output_full_path)
+
+    user_folder_full_path = os.path.join(output_full_path, username)
+    if not os.path.exists(user_folder_full_path):
+        os.mkdir(user_folder_full_path)
+
+    date_folder_full_path = os.path.join(user_folder_full_path, date_folder_name)
+    if not os.path.exists(date_folder_full_path):
+        os.mkdir(date_folder_full_path)
+
+    recording_trials = [
+        int(str(r.name)) for r in Path(date_folder_full_path).iterdir() if r.is_dir()
+    ]
+    new_recording_trial = max(recording_trials) + 1 if len(recording_trials) > 0 else 0
+    if make_new_folder:
+        next_iteration_folder = os.path.join(
+            date_folder_full_path, str(new_recording_trial)
+        )
+        if not os.path.exists(next_iteration_folder):
+            os.mkdir(next_iteration_folder)
+
+        return next_iteration_folder
+    else:
+        if new_recording_trial > 0:
+            next_iteration_folder = os.path.join(
+                date_folder_full_path, str(new_recording_trial - 1)
+            )
+            return next_iteration_folder
+        else:
+            raise ValueError(
+                "There are no recordings for this date. Therefore, the folder path of the recording "
+                "cannot be returned. "
+            )
+
+
+def save_metadata(
+    metadata: List[Dict[str, Any]], recording_path: str, metadata_file_name: str
+) -> None:
+    """
+    Saves the metadata information at the path: {recording_path}/{metadata_file_name}
+
+    :param metadata: Recording metadata to save.
+    :param recording_path: Path where the recordings are saved.
+    :param metadata_file_name: Filename of the metadata.
+
+    :return: None.
+    """
+    print_log("Saving the metadata.")
+    metadata_path = os.path.join(recording_path, metadata_file_name)
+    with open(metadata_path, "w+") as metadata_file:
+        json.dump(metadata, metadata_file, indent=4)
+
+
+def save_errors(
+    errors: Dict[str, Any], recording_path: str, error_file_name: str
+) -> None:
+    """
+    Saves the error data at the path {recording_path}/{error_file_name}.
+
+    :param errors: Error for the user.
+    :param recording_path: Path where the recordings are saved.
+    :param error_file_name: Filename of the error file.
+
+    :return: None.
+    """
+    error_path = os.path.join(recording_path, error_file_name)
+    with open(error_path, "w+") as error_file:
+        json.dump(errors, error_file)
+
+
 def download_wav_files(
     audio_ids: List[str],
     user_agent: str,
     cookies: Dict[str, Any],
-    output_folder: str,
-    date: str,
+    recording_path: str,
 ) -> None:
     """
     Downloads all of the wav files given audio ids and output location.
 
-    Creates the following structure:
-    output_folder
-    |
-    _year_month_day
-     |
-     0
-     |
-     _0.wav
-     _1.wav
-
     :param audio_ids: Audio IDs of the recordings to be downloaded.
     :param user_agent: The user agent of the WebDriver.
     :param cookies: The cookies of the WebDriver's session
-    :param output_folder: The folder name to where the recordings will be downloaded to.
-    :param date: The date at which the script ran on.
+    :param recording_path: Directory path to save the recordings in.
 
     :return: None; creates a directory structure and saves all recording files appropriately.
     """
-    year, month, day = format_date_year_month_day(date)
-    folder_string = f"{year}-{month}-{day}"
-    cwd = os.getcwd()
-
-    if output_folder not in [d.name for d in Path(cwd).iterdir()]:
-        print_log(
-            "The output folder does not seem to be in the directory. Making a folder here: "
-            f"{os.path.join(cwd, output_folder)}"
-        )
-        os.mkdir(output_folder)
-    output_path = Path(output_folder)
-
-    if folder_string in [d.name for d in output_path.iterdir()]:
-        day_folder: Path = output_path / folder_string
-        recording_trials = [
-            int(str(r.name)) for r in day_folder.iterdir() if r.is_dir()
-        ]
-        new_recording_trial = (
-            max(recording_trials) + 1 if len(recording_trials) > 0 else 0
-        )
-        recording_path = output_path / folder_string / str(new_recording_trial)
-        if recording_path not in [
-            str(d) for d in (output_path / folder_string).iterdir()
-        ]:
-            os.mkdir(recording_path)
-    else:
-        os.mkdir(output_path / folder_string)
-        os.mkdir(output_path / folder_string / "0")
-        recording_path = output_path / folder_string / "0"
 
     print_log("Downloading wav files.")
     for i, audio_id in enumerate(audio_ids):
@@ -560,10 +627,11 @@ def get_recordings(
     driver: WebDriver,
     end_date: str,
     cookies_file: str,
-    config_file: str,
+    username: str,
+    password: str,
     info_file: str,
-    output_dir: str,
     user_agent: str,
+    path_where_recordings_are_saved: str,
     download_duplicates: bool = False,
     system: str = "linux",
 ) -> None:
@@ -572,24 +640,21 @@ def get_recordings(
     heart of the program.
 
     :param driver: The WebDriver.
-    :param end_date: The earlist date to search for recordings from. The date range of recordings will be from
+    :param end_date: The earliest date to search for recordings from. The date range of recordings will be from
         this date to the date the script is ran on.
     :param cookies_file: The file location of the previous cookies (if any).
-    :param config_file: The credentials file which stores the username and password.
+    :param username: Username of the user.
+    :param password: Password of the user.
     :param info_file: The file where the recording metadata will be saved.
-    :param output_dir: The folder / directory where the recording wav files will be saved.
     :param download_duplicates: Whether the script should find the metadata for recordings that already exist
         within the config file or not.
     :param user_agent: The user agent of the driver.
+    :param path_where_recordings_are_saved: Directory path of where the recordings will be saved.
     :param system: The OS where the script is running.
 
     :return: None.
     """
     print_log("Starting metadata extraction.")
-    with open(config_file, "r") as f:
-        credentials = json.load(f)
-    username = credentials["username"]
-    password = credentials["password"]
 
     enter_username_and_password(driver, username, password, slow=True, remember_me=True)
     captcha(driver, username, password)
@@ -611,7 +676,7 @@ def get_recordings(
     ):
         driver.implicitly_wait(5)
         print_log(
-            "WARNING. Finding the recordings errored out. Trying to search again."
+            "WARNING: Finding the recordings errored out. Trying to search again."
         )
         search_for_recordings(driver, end_date, system=system)
         driver.implicitly_wait(5)
@@ -633,51 +698,111 @@ def get_recordings(
 
     extract_uid_from_recordings(driver, sorted(indices_to_download), recording_metadata)
 
-    with open(info_file, "w+") as f:
-        json.dump(recording_metadata, f, indent=4)
+    metadata_file_name = info_file.split("/")[-1]
+    save_metadata(
+        metadata=recording_metadata,
+        recording_path=path_where_recordings_are_saved,
+        metadata_file_name=metadata_file_name,
+    )
 
     recording_ids = get_audio_ids(recording_metadata)
     formatted_cookies = format_cookies_for_request(cookies)
     download_wav_files(
-        recording_ids,
-        user_agent,
-        formatted_cookies,
-        output_dir,
-        time.strftime("%m/%d/%Y"),
+        audio_ids=recording_ids,
+        user_agent=user_agent,
+        cookies=formatted_cookies,
+        recording_path=path_where_recordings_are_saved,
     )
+
+    print_log(f"Finished downloading all recordings for user {username}.")
 
     driver.quit()
 
 
-def check_credentials(config_file: str) -> None:
+def get_recordings_for_all_users(
+    driver_location: str,
+    show_driver: bool,
+    end_date: str,
+    cookies_file: str,
+    config_file: str,
+    info_file: str,
+    output_dir: str,
+    user_agent: str,
+    user: Optional[str],
+    download_duplicates: bool = False,
+    system: str = "linux",
+) -> None:
     """
-    If the previous credentials have changed from the current ones, this function will prompt the user to
-    delete any old metadata that might be stored from the previous account.
+    Runs the recording script for all users. If one user errors out, then the script will record the error
+    for that user in the correct subdirectory and will move on to the next users.
+    The number of users (and their usernames and passwords) are specified in the config file.
 
-    :param config_file: The file where the metadata is stored.
+    :param driver_location: Location of the WebDriver.
+    :param show_driver: Whether to show the driver or run it in the background.
+    :param end_date: The earliest date to search for recordings from. The date range of recordings will be from
+        this date to the date the script is ran on.
+    :param cookies_file: The file location of the previous cookies (if any).
+    :param config_file: The credentials file which stores the usernames and passwords for users.
+    :param info_file: The file where the recording metadata will be saved.
+    :param output_dir: The folder / directory where the recording wav files will be saved.
+    :param download_duplicates: Whether the script should find the metadata for recordings that already exist
+        within the config file or not.
+    :param user: A specific user to run this script for.
+    :param user_agent: The user agent of the driver.
+    :param system: The OS where the script is running.
 
     :return: None.
     """
-    last_credential_path = "./last_credentials.json"
-    # raise err if someone changes the account credentials
-    if os.path.isfile(last_credential_path):
-        with open(last_credential_path, "r") as old_c:
-            old_credential = json.load(old_c)
-        with open(config_file, "r") as new_c:
-            new_credential = json.load(new_c)
+    credentials = load_credentials(credentials_file=config_file, user=user)
+    total_users = len(credentials)
+    today_date = get_today_date_mm_dd_yyyy()
+    error_file_name = "errors.json"
+    output_dir_name = output_dir.split("/")[-1]
 
-        if old_credential != new_credential:
-            os.remove(last_credential_path)
-            raise ValueError(
-                "You have changed credential settings, "
-                "please save and delete the recordinginfo.json file."
+    for i, credentials_for_one_user in enumerate(credentials):
+        web_driver = create_driver(
+            user_agent=user_agent,
+            show=show_driver,
+            system=system,
+            driver_location=driver_location,
+        )
+        username = credentials_for_one_user["username"]
+        password = credentials_for_one_user["password"]
+        print_log(f"Working on user #{i+1}: {username} (out of {total_users} users).")
+        path_where_recordings_are_saved = get_recording_path(
+            date=today_date, output_folder=output_dir_name, username=username
+        )
+        try:
+            get_recordings(
+                driver=web_driver,
+                end_date=end_date,
+                cookies_file=cookies_file,
+                username=username,
+                password=password,
+                info_file=info_file,
+                user_agent=user_agent,
+                download_duplicates=download_duplicates,
+                system=system,
+                path_where_recordings_are_saved=path_where_recordings_are_saved,
             )
-    else:
-        # need to make a last_credential file if there is no such a file
-        with open(last_credential_path, "w") as old_c:
-            with open(config_file, "r") as new_c:
-                new_cred = json.load(new_c)
-                json.dump(new_cred, old_c)
+        except Exception as e:
+            print_log(
+                f"ERROR: The script has errored out for user {username}. These recordings will be skipped. "
+                f"You can check the error file ({error_file_name}) for all errors."
+            )
+            error_dict = {
+                username: {
+                    "error message": str(e),
+                    "full stack message": get_full_stack(),
+                }
+            }
+            save_errors(
+                errors=error_dict,
+                recording_path=path_where_recordings_are_saved,
+                error_file_name=error_file_name,
+            )
+
+        print("\n")
 
 
 @click.command()
@@ -736,6 +861,12 @@ def check_credentials(config_file: str) -> None:
     help="download recordings that have already been downloaded.",
 )
 @click.option("--driver", type=str, help="Specify file location of driver.")
+@click.option(
+    "--user",
+    type=str,
+    help="Specify a single user to be run from the config file.",
+    required=False,
+)
 def main(
     config: str,
     info: str,
@@ -746,35 +877,27 @@ def main(
     show: bool,
     download_duplicates: bool,
     driver: str,
+    user: str,
 ) -> None:
     """
-    Main function to download recording files and each recording metadata given a date to start from.
+    This script takes a list of credentials from the credentials file and downloads all recordings from a certain
+    date to today for each user.
 
-    :param config: File location of the credentials.
-    :param info: File location of the recording metadata.
-    :param cookies: File location of the cookies file.
-    :param output: Directory location of where the recordings will be saved.
-    :param date: Start date to download recordings from.
-    :param system: Operating system the script will be run on. Optional; default is linux.
-    :param show: Whether the script should show the webpage or not. Optional; default is False.
-    :param download_duplicates: Whether the script should re-process recordings that have already been processed
-        as per the metadata. Optional; default is True.
-    :param driver: File location of the WebDriver. Optional.
+    The recording information is downloaded as well as the actual file. Each recording and information is put
+    into its own subdirectory.
 
-    :return: None.
+    This script can run on mac or linux.
     """
+
     show = False if show is None else show
     download_duplicates = False if download_duplicates is None else download_duplicates
     user_agent = create_user_agent()
-    web_driver = create_driver(
-        user_agent=user_agent, show=show, system=system, driver_location=driver
-    )
 
     ensure_file_existence(config)
-    check_credentials(config)
 
-    get_recordings(
-        driver=web_driver,
+    get_recordings_for_all_users(
+        driver_location=driver,
+        show_driver=show,
         end_date=date,
         cookies_file=cookies,
         config_file=config,
@@ -783,6 +906,7 @@ def main(
         user_agent=user_agent,
         download_duplicates=download_duplicates,
         system=system,
+        user=user,
     )
 
 
