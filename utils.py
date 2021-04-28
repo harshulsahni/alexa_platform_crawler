@@ -1,8 +1,10 @@
 import datetime
 import json
 import os
+import re
 import time
 import urllib.parse
+from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
 import sys
 import traceback
@@ -99,23 +101,25 @@ def get_uid_from_event(e: Dict[str, Any]) -> str:
         return audio_id
 
 
-def get_old_metadata(metadata_info_filepath: str) -> List[Dict[str, Any]]:
+def get_old_metadata(metadata_info_filepath: Optional[str]) -> List[Dict[str, Any]]:
     """
     Get the metadata from the metadata file specified.
 
-    :param metadata_info_filepath: Location of the metadata file.
+    :param metadata_info_filepath: Location of the metadata file. If None, then an empty
+        metadata template will be returned.
 
     :return: List of metadata for all recordings that were previously downloaded.
     """
     if (
         not os.path.exists(metadata_info_filepath)
-        or metadata_info_filepath not in os.listdir()
+        or metadata_info_filepath
+        not in Path(os.path.dirname(metadata_info_filepath)).iterdir()
     ):
-        print_log("Metadata file not found. Creating a new one.")
-        with open(metadata_info_filepath, "w+") as f:
-            f.write("[\n\n]")
-    with open(metadata_info_filepath, "r") as f:
-        return json.load(f)
+        print_log("Previous metadata file not found.")
+        return json.loads("[\n\n]")
+    else:
+        with open(metadata_info_filepath, "r") as f:
+            return json.load(f)
 
 
 def get_audio_ids(metadata: List[Dict[str, Any]]) -> List[str]:
@@ -214,3 +218,49 @@ def get_full_stack() -> str:
     if exc is not None:
         stackstr += "  " + traceback.format_exc().lstrip(traceback_line)
     return stackstr
+
+
+def find_last_recording_folder(current_recording_directory: str) -> Optional[str]:
+    current_recording_directory = (
+        current_recording_directory[:-1]
+        if current_recording_directory.endswith("/")
+        else current_recording_directory
+    )
+
+    date_folder, iteration = current_recording_directory.rsplit("/", 1)
+
+    iteration_num = int(iteration)
+
+    if iteration_num > 0:
+        previous_iteration = iteration_num - 1
+        return os.path.join(date_folder, str(previous_iteration))
+    else:
+        user_folder, date = date_folder.rsplit("/", 1)
+        user_path = Path(user_folder)
+        sorted_dates = sorted([d for d in user_path.iterdir() if str(d) < date])
+        if len(sorted_dates) <= 0:
+            return None
+        else:
+            previous_date = str(sorted_dates[-1])
+            return os.path.join(user_folder, previous_date)
+
+
+def verify_input_date(date: Any) -> bool:
+    """
+    Verifies that the input date is of the correct format:
+    "YYYY/MM/DD HH:MM:SS"
+    and is a str.
+
+    :param date: Input date to check.
+
+    :return: True if the date is of the correct format; False if not.
+    """
+    if not isinstance(date, str):
+        return False
+
+    if " " not in date:
+        return False
+
+    verify_date = re.search("[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}", date)
+    return True if verify_date else False
+

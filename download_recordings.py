@@ -11,7 +11,11 @@ import click
 import requests
 from pyvirtualdisplay import Display
 from selenium import webdriver
-from selenium.common.exceptions import NoSuchElementException, WebDriverException
+from selenium.common.exceptions import (
+    NoSuchElementException,
+    WebDriverException,
+    TimeoutException,
+)
 from selenium.webdriver.chrome.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
@@ -31,10 +35,12 @@ from utils import (
     get_old_metadata,
     get_audio_ids,
     format_cookies_for_request,
+    find_last_recording_folder,
     create_user_agent,
     load_credentials,
     get_today_date_mm_dd_yyyy,
     get_full_stack,
+    verify_input_date
 )
 
 
@@ -248,20 +254,32 @@ def search_for_recordings(
     """
     print_log("Searching for recordings.")
     driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
-    driver.implicitly_wait(10)
-    display_button = driver.find_element_by_id("filters-selected-bar")
+    display_button = WebDriverWait(driver, 10).until(
+        lambda d: d.find_element_by_id("filters-selected-bar")
+    )
+    # driver.implicitly_wait(10)
+    # display_button = driver.find_element_by_id("filters-selected-bar")
     display_button.click()
     driver.implicitly_wait(2)
-    time.sleep(0.5)
-    filter_date_button = driver.find_element_by_class_name("filter-by-date-menu")
+    filter_date_button = WebDriverWait(driver, 10).until(
+        lambda d: d.find_element_by_class_name("filter-by-date-menu")
+    )
+    # time.sleep(0.5)
+    # filter_date_button = driver.find_element_by_class_name("filter-by-date-menu")
     filter_date_button.click()
     driver.implicitly_wait(2)
-    time.sleep(0.5)
-    custom_button = driver.find_element_by_id("custom-date-range-filter")
+    custom_button = WebDriverWait(driver, 10).until(
+        lambda d: d.find_element_by_id("custom-date-range-filter")
+    )
+    # time.sleep(0.5)
+    # custom_button = driver.find_element_by_id("custom-date-range-filter")
     custom_button.click()
     driver.implicitly_wait(5)
+    starting_date = WebDriverWait(driver, 10).until(
+        lambda d: d.find_element_by_id("date-start")
+    )
 
-    starting_date = driver.find_element_by_id("date-start")
+    # starting_date = driver.find_element_by_id("date-start")
     if system == "mac":
         starting_date.send_keys(Keys.COMMAND + "A")
     else:
@@ -597,7 +615,7 @@ def save_errors(
     """
     error_path = os.path.join(recording_path, error_file_name)
     with open(error_path, "w+") as error_file:
-        json.dump(errors, error_file)
+        json.dump(errors, error_file, indent=4)
 
 
 def download_wav_files(
@@ -690,7 +708,8 @@ def get_recordings(
         raise e
 
     recording_boxes = driver.find_elements_by_class_name("apd-content-box")
-    old_recording_metadata = get_old_metadata(info_file)
+    previous_path = find_last_recording_folder(path_where_recordings_are_saved)
+    old_recording_metadata = get_old_metadata(os.path.join(previous_path, info_file))
 
     recording_metadata, indices_to_download = extract_recording_metadata(
         recording_boxes, driver, old_recording_metadata, download_duplicates
@@ -715,8 +734,6 @@ def get_recordings(
     )
 
     print_log(f"Finished downloading all recordings for user {username}.")
-
-    driver.quit()
 
 
 def get_recordings_for_all_users(
@@ -785,6 +802,7 @@ def get_recordings_for_all_users(
                 system=system,
                 path_where_recordings_are_saved=path_where_recordings_are_saved,
             )
+            web_driver.quit()
         except Exception as e:
             print_log(
                 f"ERROR: The script has errored out for user {username}. These recordings will be skipped. "
@@ -801,6 +819,7 @@ def get_recordings_for_all_users(
                 recording_path=path_where_recordings_are_saved,
                 error_file_name=error_file_name,
             )
+            web_driver.quit()
 
         print("\n")
 
@@ -888,6 +907,12 @@ def main(
 
     This script can run on mac or linux.
     """
+    if not verify_input_date(date=date):
+        print_log(
+            "ERROR: The input date is not correctly formatted. Please format the date as such: "
+            "\"YYYY/MM/DD HH:MM:SS\" and run \"./download_recordings.py --help\" for more information. "
+        )
+        return
 
     show = False if show is None else show
     download_duplicates = False if download_duplicates is None else download_duplicates
