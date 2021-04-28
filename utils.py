@@ -163,7 +163,7 @@ def create_user_agent() -> str:
 
 
 def load_credentials(
-    credentials_file: str, user: Optional[str]
+    credentials_file: str, user: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     """
     Loads all of the credentials from the credentials file.
@@ -184,7 +184,7 @@ def load_credentials(
 
         # else, no user can be found with that email. raise an error.
         raise ValueError(
-            f'ERROR: The user "{user}" cannot be found in the credentials. Please double check'
+            f'ERROR: The user "{user}" cannot be found in the credentials. Please double check '
             f"this username with the usernames in the credentials file."
         )
     else:

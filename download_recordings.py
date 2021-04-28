@@ -772,6 +772,10 @@ def get_recordings_for_all_users(
     """
     credentials = load_credentials(credentials_file=config_file, user=user)
     total_users = len(credentials)
+    if credentials == load_credentials('credentials.example') or total_users == 0:
+        print_log("ERROR: Please modify the credentials.json file and add an account to use.")
+        return
+
     today_date = get_today_date_mm_dd_yyyy()
     error_file_name = "errors.json"
     output_dir_name = output_dir.split("/")[-1]
