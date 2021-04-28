@@ -2,12 +2,12 @@ import datetime
 import json
 import os
 import re
+import sys
 import time
+import traceback
 import urllib.parse
 from pathlib import Path
 from typing import List, Dict, Any, Tuple, Optional
-import sys
-import traceback
 
 from fake_useragent import UserAgent
 from selenium.webdriver.chrome.webdriver import WebDriver
@@ -163,7 +163,8 @@ def create_user_agent() -> str:
 
 
 def load_credentials(
-    credentials_file: str, user: Optional[str] = None,
+    credentials_file: str,
+    user: Optional[str] = None,
 ) -> List[Dict[str, str]]:
     """
     Loads all of the credentials from the credentials file.
@@ -221,6 +222,13 @@ def get_full_stack() -> str:
 
 
 def find_last_recording_folder(current_recording_directory: str) -> Optional[str]:
+    """
+    Locates the previous recording folder (prior to this run).
+
+    :param current_recording_directory: The recording directory where all of the recordings are saved.
+
+    :return: A string representing the directory of the past run.
+    """
     current_recording_directory = (
         current_recording_directory[:-1]
         if current_recording_directory.endswith("/")
@@ -261,6 +269,7 @@ def verify_input_date(date: Any) -> bool:
     if " " not in date:
         return False
 
-    verify_date = re.search("[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}", date)
+    verify_date = re.search(
+        "[0-9]{4}/[0-9]{2}/[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}", date
+    )
     return True if verify_date else False
-

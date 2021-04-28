@@ -254,32 +254,29 @@ def search_for_recordings(
     """
     print_log("Searching for recordings.")
     driver.get("https://www.amazon.com/hz/mycd/myx#/home/alexaPrivacy/activityHistory")
+
     display_button = WebDriverWait(driver, 10).until(
         lambda d: d.find_element_by_id("filters-selected-bar")
     )
-    # driver.implicitly_wait(10)
-    # display_button = driver.find_element_by_id("filters-selected-bar")
     display_button.click()
     driver.implicitly_wait(2)
+
     filter_date_button = WebDriverWait(driver, 10).until(
         lambda d: d.find_element_by_class_name("filter-by-date-menu")
     )
-    # time.sleep(0.5)
-    # filter_date_button = driver.find_element_by_class_name("filter-by-date-menu")
     filter_date_button.click()
     driver.implicitly_wait(2)
+
     custom_button = WebDriverWait(driver, 10).until(
         lambda d: d.find_element_by_id("custom-date-range-filter")
     )
-    # time.sleep(0.5)
-    # custom_button = driver.find_element_by_id("custom-date-range-filter")
     custom_button.click()
     driver.implicitly_wait(5)
+
     starting_date = WebDriverWait(driver, 10).until(
         lambda d: d.find_element_by_id("date-start")
     )
 
-    # starting_date = driver.find_element_by_id("date-start")
     if system == "mac":
         starting_date.send_keys(Keys.COMMAND + "A")
     else:
@@ -691,6 +688,7 @@ def get_recordings(
         NoSuchElementException,
         ProtocolError,
         RemoteDisconnected,
+        TimeoutException
     ):
         driver.implicitly_wait(5)
         print_log(
